@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Keputusan Rasmi & Analisis Pingat | STORMS</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8f9fa;
+            color: #333;
+        }
+        .hero-section {
+            background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+            color: white;
+            padding: 40px 0;
+            margin-bottom: 30px;
+            border-bottom: 5px solid #fbbf24;
+        }
+        .card {
+            border-radius: 12px;
+            overflow: hidden;
+            transition: transform 0.2s;
+        }
+        .table-success-subtle {
+            background-color: #f0fff4 !important;
+        }
+        /* Animasi untuk Rekod Baru */
+        .badge-new-record {
+            background-color: #dc3545;
+            color: white;
+            font-size: 0.7rem;
+            padding: 4px 8px;
+            border-radius: 4px;
+            animation: pulse-red 2s infinite;
+            display: inline-block;
+            margin-top: 4px;
+        }
+        @keyframes pulse-red {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(220, 53, 69, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(220, 53, 69, 0); }
+        }
+        /* Rekabentuk Dropdown Navigasi */
+        .nav-sticky-container {
+            position: sticky;
+            top: 0;
+            z-index: 1020;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 15px 0;
+            border-bottom: 1px solid #dee2e6;
+        }
+        @media print {
+            .hero-section, .d-print-none, .nav-sticky-container {
+                display: none !important;
+            }
+            body { background-color: white; }
+            .card { border: 1px solid #ddd !important; box-shadow: none !important; }
+        }
+    </style>
+</head>
+<body>
+
+    <header class="hero-section d-print-none">
+        <div class="container text-center">
+            <h1 class="fw-bold mb-2">Pencapaian Kejohanan <span id="display-tahun">2025</span></h1>
+            <p class="lead mb-4 opacity-75">Keputusan Rasmi, Analisis Pingat & Rekod Baharu</p>
+            
+            <div class="d-flex justify-content-center gap-2">
+                <button id="btn-kembali" class="btn btn-outline-light px-4">
+                    <i class="bi bi-arrow-left me-2"></i>Kembali
+                </button>
+                <button class="btn btn-warning px-4 shadow-sm" onclick="window.print()">
+                    <i class="bi bi-printer-fill me-2"></i>Cetak Laporan
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="container mb-5">
+        
+        <section id="medal-tally-container">
+            <div class="text-center py-5">
+                <div class="spinner-border text-primary" role="status"></div>
+                <p class="mt-2 text-muted">Sila tunggu, sistem sedang menjana analisis pencapaian...</p>
+            </div>
+        </section>
+
+        <hr class="my-5 d-print-none">
+
+        <section>
+            <div id="results-list-container">
+                </div>
+        </section>
+
+    </main>
+
+    <footer class="text-center py-4 bg-white border-top text-muted small d-print-none">
+        <div class="container">
+            &copy; 2025 Sistem Olahraga Tahunan Sekolah (STORMS)
+        </div>
+    </footer>
+
+    <script type="module" src="js/result-list.js"></script>
+
+    <script>
+        // Logik Paparan Tahun Aktif
+        const tahun = sessionStorage.getItem("tahun_aktif") || new Date().getFullYear().toString();
+        document.getElementById('display-tahun').innerText = tahun;
+
+        // Kawalan Butang Kembali mengikut peranan (Role)
+        const role = sessionStorage.getItem("user_role");
+        const btnKembali = document.getElementById('btn-kembali');
+
+        if (role === 'awam' || !role) {
+            btnKembali.innerHTML = `<i class="bi bi-house-door-fill me-1"></i> Ke Laman Utama`;
+        }
+
+        btnKembali.addEventListener('click', () => {
+            if (role === 'admin') {
+                window.location.href = 'admin.html';
+            } 
+            else if (role === 'guru') {
+                window.location.href = 'guru.html';
+            } 
+            else {
+                window.location.href = 'login.html';
+            }
+        });
+    </script>
+</body>
+</html>

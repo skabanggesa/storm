@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Log Masuk | Sistem Sukan Sekolah (STORMS)</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <style>
+        body {
+            background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+            height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        .header-container {
+            margin-top: 50px;
+        }
+
+        .login-card {
+            border-radius: 15px;
+            border: none;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            background: rgba(255, 255, 255, 0.95);
+        }
+
+        .btn-login {
+            padding: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: 0.3s;
+        }
+
+        .form-label {
+            font-weight: 600;
+            color: #1e3a8a;
+        }
+
+        .input-group-text {
+            background-color: #f8f9fa;
+            color: #1e3a8a;
+        }
+
+        /* Animasi ringkas untuk penukaran field */
+        #group-rumah, #group-kod {
+            transition: all 0.3s ease-in-out;
+        }
+    </style>
+</head>
+<body class="d-flex align-items-center">
+
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-md-5 col-lg-4">
+                
+                <div class="header-container text-center mb-4 text-white">
+                    <img src="assets/storm.png" alt="Logo STORMS" style="width: 15rem; height: auto;">
+                </div>
+
+                <div class="card login-card p-4">
+                    <form id="login-form">
+                        <div class="mb-3">
+                            <label class="form-label">Tahun Kejohanan</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-calendar-event"></i></span>
+                                <input type="number" id="login-tahun" class="form-control" value="2025" required>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Log Masuk Sebagai</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-person-badge"></i></span>
+                                <select id="login-role" class="form-select" required>
+                                    <option value="awam" selected>Pengguna (Lihat Keputusan)</option>
+                                    <option value="admin">Administrator (Urusetia)</option>
+                                    <option value="guru">Guru Rumah Sukan</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div id="group-rumah" class="mb-3" style="display: none;">
+                            <label class="form-label">Pilih Rumah Sukan</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-house-door"></i></span>
+                                <select id="login-rumah" class="form-select">
+                                    <option value="merah">MERAH</option>
+                                    <option value="biru">BIRU</option>
+                                    <option value="hijau">HIJAU</option>
+                                    <option value="kuning">KUNING</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div id="group-kod" class="mb-4" style="display: none;">
+                            <label id="label-kod" class="form-label">Kod Akses</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-key"></i></span>
+                                <input type="password" id="login-kod" class="form-control" placeholder="Masukkan kod">
+                            </div>
+                        </div>
+
+                        <button type="submit" id="btn-login" class="btn btn-primary w-100 btn-login shadow-sm">
+                            Masuk Ke Sistem <i class="bi bi-arrow-right-short"></i>
+                        </button>
+                    </form>
+
+                    <div id="login-msg" class="mt-3 small text-center"></div>
+                </div>
+
+                <p class="text-center mt-4 text-white-50 small">
+                    &copy; 2025 Sistem Olahraga Tahunan Sekolah
+                </p>
+
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="js/main-login.js"></script>
+
+    <script>
+        const roleSelect = document.getElementById('login-role');
+        const groupRumah = document.getElementById('group-rumah');
+        const groupKod = document.getElementById('group-kod');
+        const labelKod = document.getElementById('label-kod');
+        const inputKod = document.getElementById('login-kod');
+
+        // Fungsi untuk mengawal paparan field input
+        roleSelect.addEventListener('change', function() {
+            const val = this.value;
+
+            if (val === 'awam') {
+                // Sembunyikan semua jika Pengguna dipilih
+                groupRumah.style.display = 'none';
+                groupKod.style.display = 'none';
+                inputKod.required = false;
+            } 
+            else if (val === 'admin') {
+                // Sembunyikan Rumah, Tunjukkan Kod (Admin)
+                groupRumah.style.display = 'none';
+                groupKod.style.display = 'block';
+                labelKod.innerText = 'Kata Laluan Admin';
+                inputKod.placeholder = 'Masukkan kata laluan admin';
+                inputKod.required = true;
+            } 
+            else {
+                // Tunjukkan semua jika Guru dipilih
+                groupRumah.style.display = 'block';
+                groupKod.style.display = 'block';
+                labelKod.innerText = 'Kod Akses Rumah';
+                inputKod.placeholder = 'Contoh: MERA123';
+                inputKod.required = true;
+            }
+        });
+    </script>
+
+</body>
+</html>
