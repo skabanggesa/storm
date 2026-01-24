@@ -5,7 +5,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
 
 // Kod rahsia untuk Admin
-const MASTER_ADMIN_CODE = "KOTADMIN2025";
+const MASTER_ADMIN_CODE = "SKAbangGesa6103";
 
 const loginForm = document.getElementById('login-form');
 const loginMsg = document.getElementById('login-msg');
@@ -107,4 +107,5 @@ function tunjukkanRalat(mesej) {
                 <i class="bi bi-exclamation-triangle-fill me-2"></i> ${mesej}
             </div>`;
     }
+
 }
