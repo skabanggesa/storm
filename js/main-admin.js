@@ -11,11 +11,13 @@ import {
 } from './modules/admin.js';
 import { highJumpLogic } from './modules/highjump-logic.js'; 
 import { db } from './firebase-config.js';
-// Import fungsi Firestore yang diperlukan (Ditambah: collection, query, where, getDocs)
+
+// --- IMPORT FIRESTORE (KEMASKINI: Ditambah 'setDoc') ---
 import { 
     doc, 
     getDoc, 
     updateDoc, 
+    setDoc, // <--- PENTING: Untuk simpan kod rumah jika dokumen belum wujud
     collection, 
     query, 
     where, 
@@ -101,15 +103,29 @@ document.getElementById('btn-proses-csv')?.addEventListener('click', async () =>
     reader.readAsText(file);
 });
 
-// --- 3. SETUP KEJOHANAN ---
+// --- 3. SETUP KEJOHANAN & RUMAH SUKAN (KEMASKINI) ---
 function renderSetupForm() {
     contentArea.innerHTML = `
-        <div class="card p-4 shadow-sm border-0">
-            <h4><i class="bi bi-gear-fill me-2"></i>Setup Kejohanan (${tahunAktif})</h4>
-            <p class="text-muted small">Klik butang di bawah untuk menjana struktur database tahun ini.</p>
-            <button class="btn btn-primary" id="btn-init">Jana Struktur Data</button>
-        </div>`;
+        <div class="row">
+            <div class="col-md-6 mb-4">
+                <div class="card p-4 shadow-sm border-0 h-100">
+                    <h4 class="text-primary"><i class="bi bi-database-fill-gear me-2"></i>Setup Awal</h4>
+                    <p class="text-muted small">Jana struktur database (acara & rumah) untuk tahun ${tahunAktif}.</p>
+                    <button class="btn btn-primary mt-auto" id="btn-init">Jana Struktur Data</button>
+                </div>
+            </div>
+            <div class="col-md-6 mb-4">
+                <div class="card p-4 shadow-sm border-0 h-100">
+                    <h4 class="text-success"><i class="bi bi-shield-lock-fill me-2"></i>Akses Rumah Sukan</h4>
+                    <p class="text-muted small">Tetapkan atau kemaskini kata laluan untuk Guru Rumah Sukan.</p>
+                    <button class="btn btn-success mt-auto" id="btn-manage-house">Urus Kata Laluan Rumah</button>
+                </div>
+            </div>
+        </div>
+        
+        <div id="house-list-container" class="mt-4"></div>`;
     
+    // Event: Jana Struktur
     document.getElementById('btn-init').onclick = async () => {
         if(!confirm(`Adakah anda pasti mahu menjana struktur data untuk tahun ${tahunAktif}?`)) return;
         
@@ -121,7 +137,116 @@ function renderSetupForm() {
         if(res.success) alert("Struktur berjaya dijana!");
         else alert("Ralat: " + res.message);
     };
+
+    // Event: Urus Rumah
+    document.getElementById('btn-manage-house').onclick = () => {
+        renderSenaraiRumah();
+    };
 }
+
+// --- FUNGSI BARU: URUS KATA LALUAN RUMAH ---
+async function renderSenaraiRumah() {
+    const container = document.getElementById('house-list-container');
+    container.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-success"></div><p class="mt-2">Memuatkan data rumah...</p></div>';
+
+    // Senarai ID Rumah (Mesti huruf kecil)
+    const rumahIds = ['merah', 'biru', 'hijau', 'kuning'];
+    
+    let html = `
+        <div class="card border-0 shadow-sm animate__animated animate__fadeIn">
+            <div class="card-header bg-white fw-bold py-3">
+                <i class="bi bi-key-fill me-2 text-warning"></i>Senarai Kod Akses Rumah Sukan (${tahunAktif})
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover mb-0 align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="ps-4">Rumah Sukan</th>
+                                <th>Kod Akses (Kata Laluan)</th>
+                                <th width="150" class="text-center">Tindakan</th>
+                            </tr>
+                        </thead>
+                        <tbody>`;
+
+    for (const id of rumahIds) {
+        // Dapatkan data dari Firebase
+        const docRef = doc(db, "kejohanan", tahunAktif, "rumah", id);
+        const docSnap = await getDoc(docRef);
+        let kodSemasa = '';
+        
+        if (docSnap.exists()) {
+            kodSemasa = docSnap.data().kod || '';
+        }
+
+        // Warna badge untuk rumah
+        let badgeColor = 'secondary';
+        if(id==='merah') badgeColor='danger';
+        if(id==='biru') badgeColor='primary';
+        if(id==='hijau') badgeColor='success';
+        if(id==='kuning') badgeColor='warning text-dark';
+
+        html += `
+            <tr>
+                <td class="ps-4">
+                    <span class="badge bg-${badgeColor} p-2 px-3 rounded-pill text-uppercase">${id}</span>
+                </td>
+                <td>
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text"><i class="bi bi-lock"></i></span>
+                        <input type="text" class="form-control font-monospace" 
+                               id="input-kod-${id}" 
+                               value="${kodSemasa}" 
+                               placeholder="Cth: ${id.toUpperCase()}123">
+                    </div>
+                </td>
+                <td class="text-center">
+                    <button class="btn btn-sm btn-dark px-3" onclick="simpanKodRumah('${id}')">
+                        <i class="bi bi-save me-1"></i> Simpan
+                    </button>
+                </td>
+            </tr>`;
+    }
+
+    html += `</tbody></table></div></div>
+             <div class="card-footer bg-white text-muted small">
+                * Kod ini akan digunakan oleh Guru Rumah Sukan untuk Log Masuk.
+             </div>
+        </div>`;
+    container.innerHTML = html;
+}
+
+// Fungsi Simpan Kod ke Firebase (Global Window Function)
+window.simpanKodRumah = async (idRumah) => {
+    const kodBaru = document.getElementById(`input-kod-${idRumah}`).value.trim();
+    
+    if (!kodBaru) return alert("Sila masukkan kod akses!");
+
+    const btn = event.currentTarget; // Butang yang ditekan
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+    btn.disabled = true;
+
+    try {
+        const docRef = doc(db, "kejohanan", tahunAktif, "rumah", idRumah);
+        
+        // Guna setDoc dengan merge:true. 
+        // Ini penting: Jika dokumen rumah belum wujud, ia akan dicipta.
+        // Jika sudah wujud, ia hanya kemaskini field 'kod' tanpa buang data lain (contoh: pungutan pingat).
+        await setDoc(docRef, { 
+            kod: kodBaru,
+            nama: idRumah.toUpperCase() 
+        }, { merge: true });
+
+        alert(`Kod untuk ${idRumah.toUpperCase()} berjaya disimpan!`);
+    } catch (error) {
+        console.error(error);
+        alert("Ralat menyimpan kod: " + error.message);
+    } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    }
+};
 
 // --- 4. SENARAI ACARA ---
 async function renderSenaraiAcara(mode) {
