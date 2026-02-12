@@ -44,7 +44,6 @@
             border-radius: 8px;
             margin-top: 10px;
         }
-        /* Responsif untuk tablet/mobile */
         @media (max-width: 768px) {
             .header-tools .row > div {
                 margin-bottom: 5px;
@@ -60,12 +59,7 @@
             <i class="bi bi-trophy-fill me-2"></i>STORMS | <span id="display-tahun">2025</span>
         </a>
         <div class="d-flex align-items-center">
-            <a href="keputusan.html" class="btn btn-light btn-sm fw-bold me-3 shadow-sm text-primary">
-                <i class="bi bi-graph-up-arrow me-1"></i> Keputusan
-            </a>
-
             <span id="nama-rumah" class="badge bg-white text-primary me-3 fw-bold text-uppercase p-2">Memuatkan...</span>
-            
             <button class="btn btn-outline-light btn-sm fw-bold" id="btn-logout">
                 <i class="bi bi-box-arrow-right"></i> Keluar
             </button>
@@ -90,7 +84,7 @@
                         
                         <div class="mb-3">
                             <label class="form-label small fw-bold">Nama Atlet</label>
-                            <input type="text" id="nama-atlet" class="form-control text-uppercase" placeholder="Contoh: AHMAD BIN ALI" required>
+                            <input type="text" id="nama-atlet" class="form-control text-uppercase" placeholder="Nama Penuh" required>
                         </div>
 
                         <div class="row">
@@ -99,16 +93,20 @@
                                 <select id="kategori-atlet" class="form-select" required>
                                     <option value="">- Pilih -</option>
                                     <optgroup label="Lelaki">
-                                        <option value="L18">L18 (B18)</option>
-                                        <option value="L15">L15 (B15)</option>
-                                        <option value="L14">L14 (B14)</option>
-                                        <option value="L13">L13 (B13)</option>
+                                        <option value="L12">L12 (B12)</option>
+                                        <option value="L11">L11 (B11)</option>
+                                        <option value="L10">L10 (B10)</option>
+                                        <option value="L9">L9 (B9)</option>
+                                        <option value="L8">L8 (B8)</option>
+                                        <option value="L7">L7 (B7)</option>
                                     </optgroup>
                                     <optgroup label="Perempuan">
-                                        <option value="P18">P18 (B18)</option>
-                                        <option value="P15">P15 (B15)</option>
-                                        <option value="P14">P14 (B14)</option>
-                                        <option value="P13">P13 (B13)</option>
+                                        <option value="P12">P12 (B12)</option>
+                                        <option value="P11">P11 (B11)</option>
+                                        <option value="P10">P10 (B10)</option>
+                                        <option value="P9">P9 (B9)</option>
+                                        <option value="P8">P8 (B8)</option>
+                                        <option value="P7">P7 (B7)</option>
                                     </optgroup>
                                 </select>
                             </div>
@@ -131,7 +129,7 @@
                                 <i class="bi bi-save me-1"></i> Simpan Pendaftaran
                             </button>
                             <button type="button" id="btn-batal" class="btn btn-outline-secondary d-none">
-                                <i class="bi bi-x-circle me-1"></i> Batal Kemaskini
+                                <i class="bi bi-x-circle me-1"></i> Batal
                             </button>
                         </div>
                     </form>
@@ -159,14 +157,22 @@
                             <div class="col-md-4">
                                 <select id="filter-kategori" class="form-select form-select-sm shadow-sm">
                                     <option value="SEMUA">Semua Kategori</option>
-                                    <option value="L18">L18</option>
-                                    <option value="L15">L15</option>
-                                    <option value="L14">L14</option>
-                                    <option value="L13">L13</option>
-                                    <option value="P18">P18</option>
-                                    <option value="P15">P15</option>
-                                    <option value="P14">P14</option>
-                                    <option value="P13">P13</option>
+                                    <optgroup label="Lelaki">
+                                        <option value="L12">L12</option>
+                                        <option value="L11">L11</option>
+                                        <option value="L10">L10</option>
+                                        <option value="L9">L9</option>
+                                        <option value="L8">L8</option>
+                                        <option value="L7">L7</option>
+                                    </optgroup>
+                                    <optgroup label="Perempuan">
+                                        <option value="P12">P12</option>
+                                        <option value="P11">P11</option>
+                                        <option value="P10">P10</option>
+                                        <option value="P9">P9</option>
+                                        <option value="P8">P8</option>
+                                        <option value="P7">P7</option>
+                                    </optgroup>
                                 </select>
                             </div>
                             <div class="col-md-8">
@@ -211,37 +217,25 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header bg-success text-white">
-                <h5 class="modal-title fw-bold"><i class="bi bi-file-earmark-spreadsheet me-2"></i>Muat Naik Data Pukal</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                <h5 class="modal-title fw-bold">Muat Naik Data CSV</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <div class="alert alert-info small">
-                    <strong>Format Fail CSV (3 Lajur):</strong><br>
-                    Sila pastikan fail .csv anda mempunyai susunan berikut:<br>
-                    1. Nama Atlet<br>
-                    2. Kategori (Contoh: L18, P15)<br>
-                    3. No. Badan (Contoh: M101)<br>
-                    <br>
-                    <em>*Baris pertama akan dianggap sebagai header dan tidak akan dibaca.</em>
+                    <strong>Format:</strong> Nama, Kategori (L7-L12), No. Bip
                 </div>
-                
-                <div class="mb-3">
-                    <label for="failCsv" class="form-label fw-bold">Pilih Fail (.csv)</label>
-                    <input class="form-control" type="file" id="failCsv" accept=".csv">
-                </div>
-
+                <input class="form-control" type="file" id="failCsv" accept=".csv">
                 <div id="status-upload" class="small text-muted mt-2"></div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>
-                <button type="button" class="btn btn-success" onclick="prosesCSV()">Muat Naik Sekarang</button>
+                <button type="button" class="btn btn-success" onclick="prosesCSV()">Muat Naik</button>
             </div>
         </div>
     </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-
 <script type="module" src="js/main-guru.js"></script>
 
 </body>
