@@ -2,10 +2,10 @@
 // FAIL: js/modules/guru.js
 // =========================================================
 
-// Import Database dari fail config
+// Import DB yang telah di-initialise di firebase-config.js
 import { db } from '../firebase-config.js'; 
 
-// Import fungsi Firestore dari CDN (Pastikan versi sama dengan firebase-config.js)
+// PENTING: Gunakan versi 11.1.0 sama seperti dalam firebase-config.js anda
 import { 
     collection, 
     doc, 
@@ -15,34 +15,22 @@ import {
     where, 
     updateDoc, 
     deleteDoc 
-} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
 
-/**
- * 1. Mendaftar Peserta Baru
- */
+// 1. DAFTAR PESERTA
 export async function registerParticipant(tahun, data) {
     try {
-        // Create reference dengan Auto-ID
         const pesertaRef = doc(collection(db, "sukantara", tahun, "peserta"));
-        
-        // Masukkan ID ke dalam data
-        const dataLengkap = {
-            ...data,
-            id: pesertaRef.id
-        };
-
+        const dataLengkap = { ...data, id: pesertaRef.id };
         await setDoc(pesertaRef, dataLengkap);
         return { success: true, id: pesertaRef.id };
-
     } catch (error) {
         console.error("Ralat Daftar:", error);
         throw error;
     }
 }
 
-/**
- * 2. Mengemaskini Data Peserta
- */
+// 2. KEMASKINI DATA
 export async function updateParticipant(tahun, docId, data) {
     try {
         const pesertaRef = doc(db, "sukantara", tahun, "peserta", docId);
@@ -54,10 +42,7 @@ export async function updateParticipant(tahun, docId, data) {
     }
 }
 
-/**
- * 3. Memadam Peserta
- * (Wajib ada supaya main-guru.js tidak error)
- */
+// 3. PADAM PESERTA (Wajib ada)
 export async function deleteParticipant(tahun, docId) {
     try {
         const pesertaRef = doc(db, "sukantara", tahun, "peserta", docId);
@@ -69,32 +54,23 @@ export async function deleteParticipant(tahun, docId) {
     }
 }
 
-/**
- * 4. Mendapatkan Senarai Acara Mengikut Kategori
- */
+// 4. DAPATKAN SENARAI ACARA
 export async function getEventsByCategory(tahun, kategori) {
     try {
         const q = query(collection(db, "sukantara", tahun, "acara"));
         const snapshot = await getDocs(q);
-        
         let events = [];
         snapshot.forEach((doc) => {
-            const data = doc.data();
-            // Di sini kita ambil semua acara dahulu
-            // Anda boleh tambah logic filter jika perlu
-            events.push({ id: doc.id, ...data });
+            events.push({ id: doc.id, ...doc.data() });
         });
         return events;
-
     } catch (error) {
         console.error("Ralat Acara:", error);
         throw error;
     }
 }
 
-/**
- * 5. Mendapatkan Senarai Peserta Berdaftar (Ikut Rumah)
- */
+// 5. DAPATKAN SENARAI PESERTA (Untuk Table)
 export async function getRegisteredParticipants(tahun, idRumah) {
     try {
         const q = query(
@@ -104,15 +80,13 @@ export async function getRegisteredParticipants(tahun, idRumah) {
 
         const snapshot = await getDocs(q);
         let list = [];
-        
         snapshot.forEach((doc) => {
             list.push({ id: doc.id, ...doc.data() });
         });
-
         return list;
 
     } catch (error) {
         console.error("Ralat Senarai Peserta:", error);
-        throw error;
+        throw error; // Ini akan ditangkap oleh main-guru.js
     }
 }
