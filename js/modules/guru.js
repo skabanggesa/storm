@@ -1,15 +1,14 @@
-// Import fungsi Firebase yang diperlukan
+// Pastikan path ini betul mengikut struktur folder anda
 import { db } from '../firebase-config.js'; 
 import { 
     collection, 
     doc, 
     setDoc, 
     updateDoc, 
-    deleteDoc, // <--- Pastikan ini ada
+    deleteDoc,
     getDocs, 
     query, 
-    where,
-    getDoc 
+    where 
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
 // =========================================================
@@ -17,24 +16,23 @@ import {
 // =========================================================
 export async function registerParticipant(tahun, data) {
     try {
-        // Gunakan No Kad Pengenalan atau Gabungan Unik sebagai ID Dokumen
-        // Jika tiada ID unik, biarkan Firestore generate (tapi lebih baik custom ID untuk elak duplikasi)
-        // Di sini kita guna auto-generate ID oleh Firestore melalui doc() collection reference
-        
+        // Validation data asas
+        if (!tahun || !data) throw new Error("Data tahun atau peserta tidak lengkap.");
+
+        // Guna doc() tanpa ID untuk auto-generate ID
         const pesertaRef = doc(collection(db, "sukantara", tahun, "peserta"));
         
-        // Masukkan ID dokumen ke dalam data supaya senang dirujuk nanti
         const dataLengkap = {
             ...data,
-            id: pesertaRef.id
+            id: pesertaRef.id // Simpan ID dalam dokumen juga
         };
 
         await setDoc(pesertaRef, dataLengkap);
         return { success: true, id: pesertaRef.id };
 
     } catch (error) {
-        console.error("Ralat Mendaftar:", error);
-        throw new Error("Gagal mendaftar peserta. Sila cuba lagi.");
+        console.error("DEBUG - Ralat Register:", error);
+        throw error;
     }
 }
 
@@ -47,78 +45,81 @@ export async function updateParticipant(tahun, docId, data) {
         await updateDoc(pesertaRef, data);
         return { success: true };
     } catch (error) {
-        console.error("Ralat Kemaskini:", error);
-        throw new Error("Gagal mengemaskini data.");
+        console.error("DEBUG - Ralat Update:", error);
+        throw error;
     }
 }
 
 // =========================================================
-// 3. PADAM PESERTA (FUNGSI YANG HILANG SEBELUM INI)
+// 3. PADAM PESERTA
 // =========================================================
 export async function deleteParticipant(tahun, docId) {
     try {
+        if (!docId) throw new Error("ID Peserta diperlukan.");
+        
         const pesertaRef = doc(db, "sukantara", tahun, "peserta", docId);
         await deleteDoc(pesertaRef);
         return { success: true };
     } catch (error) {
-        console.error("Ralat Padam:", error);
-        throw new Error("Gagal memadam peserta.");
+        console.error("DEBUG - Ralat Delete:", error);
+        throw error;
     }
 }
 
 // =========================================================
-// 4. DAPATKAN SENARAI ACARA IKUT KATEGORI
+// 4. DAPATKAN SENARAI ACARA
 // =========================================================
 export async function getEventsByCategory(tahun, kategori) {
     try {
-        // Logik: Acara disimpan dalam collection 'acara'
-        // Struktur: sukantara/{tahun}/acara
-        // Kita filter di Client-side atau query mudah
-        
-        const q = query(collection(db, "sukantara", tahun, "acara"));
-        const snapshot = await getDocs(q);
+        const colRef = collection(db, "sukantara", tahun, "acara");
+        const snapshot = await getDocs(colRef);
         
         let events = [];
         snapshot.forEach((doc) => {
-            const data = doc.data();
-            // Tapis sama ada kategori ini layak (L18, P15 dll)
-            // Andaikan dalam DB ada array 'kategoriLayak' atau string
-            // Jika data acara simple, kita ambil semua dan filter
-            
-            // CONTOH MUDAH: Ambil semua acara, nanti filter manual jika perlu
-            // ATAU: Pastikan DB acara ada field 'kategori' array
-            events.push({ id: doc.id, ...data });
+            events.push({ id: doc.id, ...doc.data() });
         });
-
         return events;
 
     } catch (error) {
-        console.error("Ralat Acara:", error);
+        console.error("DEBUG - Ralat Get Acara:", error);
         throw new Error("Gagal memuatkan senarai acara.");
     }
 }
 
 // =========================================================
-// 5. DAPATKAN PESERTA YANG SUDAH DAFTAR (FILTER RUMAH)
+// 5. DAPATKAN PESERTA (PUNCA RALAT ANDA)
 // =========================================================
 export async function getRegisteredParticipants(tahun, idRumah) {
-    try {
-        const q = query(
-            collection(db, "sukantara", tahun, "peserta"),
-            where("idRumah", "==", idRumah)
-        );
+    // 1. Debugging Log - Lihat di Console Browser
+    console.log(`DEBUG: Meminta data peserta... Tahun: ${tahun}, ID Rumah: ${idRumah}`);
 
+    try {
+        // Validasi input
+        if (!tahun) throw new Error("Tahun tidak ditemui (Undefined).");
+        if (!idRumah) throw new Error("ID Rumah tidak ditemui.");
+        if (!db) throw new Error("Sambungan DB (firebase-config) gagal.");
+
+        // 2. Setup Query
+        // Pastikan path: sukantara -> [tahun] -> peserta
+        const colRef = collection(db, "sukantara", tahun, "peserta");
+        const q = query(colRef, where("idRumah", "==", idRumah));
+
+        // 3. Execute
         const snapshot = await getDocs(q);
-        let list = [];
         
+        let list = [];
         snapshot.forEach((doc) => {
             list.push({ id: doc.id, ...doc.data() });
         });
 
+        console.log(`DEBUG: Berjaya dapat ${list.length} peserta.`);
         return list;
 
     } catch (error) {
-        console.error("Ralat Senarai Peserta:", error);
-        throw new Error("Gagal mendapatkan senarai peserta.");
+        // Ini akan paparkan ralat sebenar dari Firebase di console
+        console.error("CRITICAL ERROR (getRegisteredParticipants):", error);
+        
+        // Buang mesej custom, kita mahu lihat error asal dulu
+        throw new Error(error.message); 
     }
 }
