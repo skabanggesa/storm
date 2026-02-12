@@ -2,348 +2,490 @@ import {
     registerParticipant, 
     updateParticipant, 
     getEventsByCategory, 
-    getRegisteredParticipants 
+    getRegisteredParticipants,
+    deleteParticipant // Pastikan module guru.js anda ada fungsi ini, jika tiada boleh abaikan
 } from './modules/guru.js';
 
 // =========================================================
-// 1. DATA SESI & KAWALAN AKSES
+// BAHAGIAN 1: KONFIGURASI & KAWALAN AKSES
 // =========================================================
+
+// Ambil data dari Session Storage
 const tahunAktif = sessionStorage.getItem("tahun_aktif") || new Date().getFullYear().toString();
 const idRumah = sessionStorage.getItem("user_rumah");
 const namaRumah = sessionStorage.getItem("nama_rumah");
 const userRole = sessionStorage.getItem("user_role");
 
-// Redirect jika bukan guru atau tiada sesi
+// Semakan Keselamatan: Halang akses jika bukan Guru
 if (userRole !== 'guru' || !idRumah) {
-    alert("Sesi tamat atau akses tidak sah. Sila log masuk semula.");
+    alert("Sesi anda telah tamat atau anda tiada kebenaran. Sila log masuk semula.");
     window.location.href = 'login.html';
 }
 
-// Global Variable untuk simpan data tempatan (Client-side caching)
+// Global Variable untuk simpanan sementara data (Cache)
 let globalPesertaList = []; 
 
-// Set UI Header
-document.getElementById('nama-rumah').innerText = `Rumah: ${namaRumah}`;
-document.getElementById('display-tahun').innerText = tahunAktif;
+// Tetapan UI Awal
+document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('nama-rumah').innerText = `Rumah: ${namaRumah}`;
+    document.getElementById('display-tahun').innerText = tahunAktif;
+    
+    // Mula memuatkan data peserta sebaik sahaja page ready
+    muatSenaraiPeserta();
+});
 
 // =========================================================
-// 2. REFERENSI ELEMEN DOM
+// BAHAGIAN 2: REFERENSI ELEMEN DOM (DOM CACHING)
 // =========================================================
 const el = {
+    // Borang
+    form: document.getElementById('form-daftar-atlet'),
     id: document.getElementById('edit-id-peserta'),
-    bib: document.getElementById('no-bib'),
     nama: document.getElementById('nama-atlet'),
     kat: document.getElementById('kategori-atlet'),
-    listAcara: document.getElementById('senarai-acara-checkbox'),
-    countAcara: document.getElementById('count-acara'),
-    form: document.getElementById('form-daftar-atlet'),
+    bib: document.getElementById('no-bib'),
+    
+    // Checkbox Acara
+    containerAcara: document.getElementById('senarai-acara-checkbox'),
+    labelCountAcara: document.getElementById('count-acara'),
+    
+    // Butang
     btnDaftar: document.getElementById('btn-daftar'),
     btnBatal: document.getElementById('btn-batal'),
+    
+    // Toolbar Senarai
     filterKat: document.getElementById('filter-kategori'),
     inputCarian: document.getElementById('carian-nama'),
     labelJumlah: document.getElementById('jumlah-peserta'),
-    tbody: document.querySelector('#list-peserta table tbody')
+    
+    // Jadual
+    tbody: document.querySelector('#list-peserta table tbody'),
+
+    // Modal CSV
+    inputCsv: document.getElementById('failCsv'),
+    statusCsv: document.getElementById('status-upload')
 };
 
 // =========================================================
-// 3. FUNGSI: PENGURUSAN ACARA (CHECKBOX)
+// BAHAGIAN 3: PENGURUSAN ACARA (CHECKBOX LOGIC)
 // =========================================================
 
 /**
- * Memuatkan senarai checkbox acara berdasarkan kategori
- * @param {string} kategori - Kod kategori (L18, P15, dll)
- * @param {Array} terpilih - Array nama acara yang sudah didaftar (untuk mode Edit)
+ * Fungsi untuk memuatkan checkbox acara berdasarkan kategori jantina/umur
  */
-async function muatAcara(kategori, terpilih = []) {
+async function muatAcara(kategori, acaraTerpilih = []) {
+    // Reset paparan
+    el.containerAcara.innerHTML = '<div class="text-center p-3"><div class="spinner-border spinner-border-sm text-primary"></div><span class="ms-2 small">Memuatkan acara...</span></div>';
+    el.labelCountAcara.innerText = "0/5 dipilih";
+    el.labelCountAcara.className = "form-text mt-1 text-end small text-muted";
+
     if (!kategori) {
-        el.listAcara.innerHTML = '<div class="text-muted small fst-italic">Sila pilih kategori dahulu...</div>';
+        el.containerAcara.innerHTML = '<div class="text-muted small fst-italic p-2">Sila pilih kategori atlet dahulu untuk melihat acara.</div>';
         return;
     }
 
-    el.listAcara.innerHTML = '<div class="text-center p-2"><div class="spinner-border spinner-border-sm text-primary"></div></div>';
-
     try {
+        // Panggil Database/API
         const senaraiAcara = await getEventsByCategory(tahunAktif, kategori);
         
         if (!senaraiAcara || senaraiAcara.length === 0) {
-            el.listAcara.innerHTML = '<div class="text-danger small">Tiada acara ditemui untuk kategori ini.</div>';
+            el.containerAcara.innerHTML = '<div class="alert alert-warning py-1 small mb-0"><i class="bi bi-exclamation-circle"></i> Tiada acara didaftarkan untuk kategori ini.</div>';
             return;
         }
 
-        // Pastikan 'terpilih' sentiasa array
-        const arrayTerpilih = Array.isArray(terpilih) ? terpilih : [];
+        // Pastikan acaraTerpilih adalah array
+        const currentSelection = Array.isArray(acaraTerpilih) ? acaraTerpilih : [];
 
+        // Bina HTML Checkbox
         let html = '';
         senaraiAcara.forEach(acara => {
-            // Tandakan checked jika acara ini ada dalam senarai atlet
-            const isChecked = arrayTerpilih.includes(acara.nama) ? 'checked' : '';
+            const isChecked = currentSelection.includes(acara.nama) ? 'checked' : '';
             html += `
-                <div class="form-check mb-1">
-                    <input class="form-check-input acara-cb" type="checkbox" value="${acara.nama}" id="ev-${acara.id}" ${isChecked}>
-                    <label class="form-check-label small" for="ev-${acara.id}">${acara.nama}</label>
+                <div class="form-check mb-2">
+                    <input class="form-check-input input-acara" type="checkbox" value="${acara.nama}" id="ev-${acara.id}" ${isChecked}>
+                    <label class="form-check-label small" for="ev-${acara.id}">
+                        ${acara.nama}
+                    </label>
                 </div>`;
         });
-        el.listAcara.innerHTML = html;
-        updateCount();
+        
+        el.containerAcara.innerHTML = html;
+        
+        // Update kaunter sekiranya ini mode Edit
+        kemaskiniKaunterAcara();
+
     } catch (err) {
-        el.listAcara.innerHTML = `<div class="text-danger small">Ralat: ${err.message}</div>`;
+        console.error(err);
+        el.containerAcara.innerHTML = `<div class="text-danger small p-2">Ralat memuatkan acara: ${err.message}</div>`;
     }
 }
 
-// Event Listener: Hadkan maksima 5 acara & update counter
-el.listAcara.addEventListener('change', (e) => {
-    if (e.target.classList.contains('acara-cb')) {
-        const checked = el.listAcara.querySelectorAll('.acara-cb:checked');
-        if (checked.length > 5) {
-            e.target.checked = false;
-            alert("Maksimum 5 acara sahaja dibenarkan!");
+/**
+ * Event Listener untuk Logik Had 5 Acara
+ */
+el.containerAcara.addEventListener('change', (e) => {
+    if (e.target.classList.contains('input-acara')) {
+        const checkboxes = el.containerAcara.querySelectorAll('.input-acara:checked');
+        
+        if (checkboxes.length > 5) {
+            e.target.checked = false; // Batalkan selection terakhir
+            alert("Harap maaf. Seorang atlet hanya dibenarkan menyertai maksimum 5 acara sahaja.");
         }
-        updateCount();
+        
+        kemaskiniKaunterAcara();
     }
 });
 
-function updateCount() {
-    const total = el.listAcara.querySelectorAll('.acara-cb:checked').length;
-    el.countAcara.innerText = `${total}/5 dipilih`;
-    
-    // Tukar warna jika 0 atau 5
-    if(total === 0) el.countAcara.className = "form-text mt-1 text-end small text-muted";
-    else if(total === 5) el.countAcara.className = "form-text mt-1 text-end small text-danger fw-bold";
-    else el.countAcara.className = "form-text mt-1 text-end small text-primary";
+function kemaskiniKaunterAcara() {
+    const total = el.containerAcara.querySelectorAll('.input-acara:checked').length;
+    el.labelCountAcara.innerText = `${total}/5 dipilih`;
+
+    if (total === 5) {
+        el.labelCountAcara.className = "form-text mt-1 text-end small text-danger fw-bold";
+    } else if (total > 0) {
+        el.labelCountAcara.className = "form-text mt-1 text-end small text-primary fw-bold";
+    } else {
+        el.labelCountAcara.className = "form-text mt-1 text-end small text-muted";
+    }
 }
 
-// Event Listener: Muat acara bila Kategori berubah
-el.kat.addEventListener('change', (e) => muatAcara(e.target.value));
+// Trigger muat acara bila dropdown kategori berubah
+el.kat.addEventListener('change', (e) => {
+    muatAcara(e.target.value);
+});
 
 
 // =========================================================
-// 4. FUNGSI: PENDAFTARAN & KEMASKINI
+// BAHAGIAN 4: PENDAFTARAN & KEMASKINI (CRUD)
 // =========================================================
 
 el.form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    
-    const docId = el.id.value;
-    const checkedAcara = Array.from(el.listAcara.querySelectorAll('.acara-cb:checked')).map(cb => cb.value);
 
-    // Validasi Acara: Wajib pilih 1 jika mendaftar manual?
-    // Jika tidak mahu wajib, boleh buang baris ini.
-    if (checkedAcara.length === 0) {
-        if(!confirm("Anda tidak memilih sebarang acara. Teruskan simpan?")) return;
+    // 1. Ambil Data dari Borang
+    const idPeserta = el.id.value;
+    const nama = el.nama.value.toUpperCase().trim();
+    const kategori = el.kat.value;
+    const noBib = el.bib.value.toUpperCase().trim();
+    
+    // Ambil semua checkbox yang ditanda
+    const checkboxes = el.containerAcara.querySelectorAll('.input-acara:checked');
+    const acaraDaftar = Array.from(checkboxes).map(cb => cb.value);
+
+    // 2. Validasi Asas
+    if (!nama || !kategori || !noBib) {
+        alert("Sila lengkapkan semua butiran wajib (Nama, Kategori, No Bib).");
+        return;
     }
 
-    const data = {
-        nama: el.nama.value.toUpperCase().trim(),
-        kategori: el.kat.value,
-        noBib: el.bib.value.toUpperCase().trim(),
+    // 3. Penyediaan Objek Data
+    const dataPeserta = {
+        nama: nama,
+        kategori: kategori,
+        noBib: noBib,
         idRumah: idRumah,
         rumah: namaRumah,
-        acaraDaftar: checkedAcara,
-        kemaskiniOleh: 'guru',
-        tarikhDaftar: new Date().toISOString()
+        acaraDaftar: acaraDaftar,
+        kemaskiniOleh: 'guru', // Audit trail
+        tarikhKemaskini: new Date().toISOString()
     };
 
+    if (!idPeserta) {
+        dataPeserta.tarikhDaftar = new Date().toISOString();
+    }
+
+    // 4. Proses Simpan ke Database
     try {
-        // UI Loading State
-        el.btnDaftar.disabled = true;
-        const originalText = el.btnDaftar.innerHTML;
-        el.btnDaftar.innerHTML = `<span class="spinner-border spinner-border-sm"></span> Menyimpan...`;
+        // UI Loading
+        kunciBorang(true, "Sedang Menyimpan...");
 
-        let res = docId ? await updateParticipant(tahunAktif, docId, data) : await registerParticipant(tahunAktif, data);
-
-        if (res.success) {
-            alert(docId ? "Data berjaya dikemaskini!" : "Pendaftaran berjaya!");
-            resetBorang();
-            muatSenaraiPeserta(); // Refresh data table
+        let result;
+        if (idPeserta) {
+            // Mode EDIT
+            result = await updateParticipant(tahunAktif, idPeserta, dataPeserta);
+            if (result.success) {
+                alert(`Data atlet '${nama}' berjaya dikemaskini.`);
+            }
+        } else {
+            // Mode DAFTAR BARU
+            result = await registerParticipant(tahunAktif, dataPeserta);
+            if (result.success) {
+                alert(`Pendaftaran berjaya!\nAtlet: ${nama}\nNo Bib: ${noBib}`);
+            }
         }
-    } catch (err) { 
-        alert("Ralat: " + err.message); 
-    } 
-    finally { 
-        // Reset UI Button
-        el.btnDaftar.disabled = false; 
-        el.btnDaftar.innerHTML = docId ? `<i class="bi bi-pencil-square me-1"></i> Simpan Perubahan` : `<i class="bi bi-save me-1"></i> Simpan Pendaftaran`;
+
+        // 5. Selesai
+        resetBorang();
+        muatSenaraiPeserta(); // Refresh jadual
+
+    } catch (error) {
+        console.error("Ralat simpan:", error);
+        alert("Gagal menyimpan data: " + error.message);
+    } finally {
+        kunciBorang(false);
     }
 });
 
+// Fungsi Reset Borang ke keadaan asal
 function resetBorang() {
     el.form.reset();
     el.id.value = "";
-    el.btnDaftar.innerHTML = `<i class="bi bi-save me-1"></i> Simpan Pendaftaran`;
-    el.btnDaftar.classList.remove('btn-warning');
-    el.btnDaftar.classList.add('btn-primary');
+    
+    // Reset UI Checkbox
+    el.containerAcara.innerHTML = '<div class="text-muted small fst-italic p-2">Sila pilih kategori atlet dahulu...</div>';
+    el.labelCountAcara.innerText = "0/5 dipilih";
+    
+    // Reset Butang
+    el.btnDaftar.innerHTML = '<i class="bi bi-save me-1"></i> Simpan Pendaftaran';
+    el.btnDaftar.className = 'btn btn-primary shadow-sm fw-bold';
     el.btnBatal.classList.add('d-none');
-    el.listAcara.innerHTML = '<div class="text-muted small fst-italic">Sila pilih kategori dahulu...</div>';
-    el.countAcara.innerText = "0/5 dipilih";
+    
     el.nama.focus();
 }
 
-// =========================================================
-// 5. FUNGSI: SENARAI PESERTA (FETCH + FILTER + RENDER)
-// =========================================================
-
-/**
- * Langkah 1: Ambil semua data dari server
- */
-async function muatSenaraiPeserta() {
-    el.tbody.innerHTML = `<tr><td colspan="4" class="text-center py-5"><div class="spinner-border spinner-border-sm text-primary"></div><p class="small text-muted mt-2">Sedang mengambil data...</p></td></tr>`;
-
-    try {
-        const peserta = await getRegisteredParticipants(tahunAktif, idRumah);
-        globalPesertaList = peserta || [];
-        renderJadual(); // Terus render lepas dapat data
-    } catch (err) { 
-        el.tbody.innerHTML = `<tr><td colspan="4" class="text-danger text-center">Ralat Sambungan: ${err.message}</td></tr>`; 
+function kunciBorang(isLocked, msg = "") {
+    el.btnDaftar.disabled = isLocked;
+    if (isLocked) {
+        el.btnDaftar.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span> ${msg}`;
     }
 }
 
-/**
- * Langkah 2: Tapis, Susun dan Papar data ke HTML
- */
+// Event Listener butang Batal
+el.btnBatal.addEventListener('click', resetBorang);
+
+
+// =========================================================
+// BAHAGIAN 5: SENARAI PESERTA (PAPARAN SKRIN)
+// =========================================================
+
+async function muatSenaraiPeserta() {
+    // Tunjuk loader dalam table
+    el.tbody.innerHTML = `
+        <tr>
+            <td colspan="4" class="text-center py-5">
+                <div class="spinner-border text-primary" role="status"></div>
+                <div class="mt-2 small text-muted">Mengambil data terkini...</div>
+            </td>
+        </tr>`;
+
+    try {
+        const data = await getRegisteredParticipants(tahunAktif, idRumah);
+        globalPesertaList = data || [];
+        renderJadual(); // Proses data ke HTML
+    } catch (error) {
+        console.error(error);
+        el.tbody.innerHTML = `
+            <tr>
+                <td colspan="4" class="text-center text-danger py-4">
+                    <i class="bi bi-wifi-off display-6"></i><br>
+                    Gagal memuatkan data. Sila semak sambungan internet anda.
+                </td>
+            </tr>`;
+    }
+}
+
 function renderJadual() {
     const filterKat = el.filterKat.value;
-    const kataKunci = el.inputCarian.value.toLowerCase();
+    const keyword = el.inputCarian.value.toLowerCase();
 
-    // 1. FILTER & SEARCH
-    let filteredData = globalPesertaList.filter(p => {
+    // 1. Tapis Data
+    let filtered = globalPesertaList.filter(p => {
         const matchKategori = (filterKat === "SEMUA") || (p.kategori === filterKat);
-        const matchNama = p.nama.toLowerCase().includes(kataKunci) || 
-                          (p.noBib && p.noBib.toLowerCase().includes(kataKunci));
+        const matchNama = p.nama.toLowerCase().includes(keyword) || 
+                          (p.noBib && p.noBib.toLowerCase().includes(keyword));
         return matchKategori && matchNama;
     });
 
-    // 2. SORT (Susun ikut Kategori A-Z, kemudian Nama A-Z)
-    filteredData.sort((a, b) => {
+    // 2. Susun Data (Sorting) untuk paparan Skrin
+    // Standard: Kategori (L12->P12) -> Nama (A->Z)
+    filtered.sort((a, b) => {
         if (a.kategori < b.kategori) return -1;
         if (a.kategori > b.kategori) return 1;
-        if (a.nama < b.nama) return -1;
-        if (a.nama > b.nama) return 1;
-        return 0;
+        return a.nama.localeCompare(b.nama);
     });
 
-    // 3. GENERATE HTML
+    // 3. Bina HTML
+    if (filtered.length === 0) {
+        el.tbody.innerHTML = `<tr><td colspan="4" class="text-center text-muted py-4 fst-italic">- Tiada rekod ditemui -</td></tr>`;
+        el.labelJumlah.innerText = "0 Orang";
+        return;
+    }
+
     let html = '';
-    
-    if (filteredData.length === 0) {
-        html = `<tr><td colspan="4" class="text-center text-muted py-4 fst-italic">Tiada rekod ditemui.</td></tr>`;
-    } else {
-        filteredData.forEach((p) => {
-            const listAcara = Array.isArray(p.acaraDaftar) ? p.acaraDaftar : [];
-            const count = listAcara.length;
-            
-            // Logik UI Badge
-            let badgeColor = 'bg-secondary';
-            if(count > 0 && count < 5) badgeColor = 'bg-success';
-            if(count === 5) badgeColor = 'bg-danger';
+    filtered.forEach(p => {
+        const events = Array.isArray(p.acaraDaftar) ? p.acaraDaftar : [];
+        const eventCount = events.length;
+        const eventsDisplay = eventCount > 0 ? events.join(', ') : '<span class="text-muted fst-italic">Tiada acara</span>';
+        
+        // Warna badge untuk visual cepat
+        let badgeClass = 'bg-secondary';
+        if (eventCount > 0 && eventCount < 5) badgeClass = 'bg-success';
+        if (eventCount === 5) badgeClass = 'bg-danger';
 
-            const displayAcara = count > 0 ? listAcara.join(', ') : '<span class="text-muted small fst-italic">Tiada acara</span>';
-
-            html += `
+        html += `
             <tr>
-                <td><span class="badge bg-light text-dark border">${p.kategori}</span></td>
-                <td class="fw-bold text-primary font-monospace">${p.noBib || '-'}</td>
+                <td class="text-center">
+                    <span class="badge bg-light text-dark border shadow-sm">${p.kategori}</span>
+                </td>
+                <td class="font-monospace fw-bold text-primary">${p.noBib || '-'}</td>
                 <td>
-                    <div class="fw-bold text-dark text-uppercase small">${p.nama}</div>
-                    <div class="mt-1" style="font-size: 0.75rem; line-height: 1.2;">
-                        <span class="badge ${badgeColor} me-1" style="font-size: 0.65rem;">${count}</span>
-                        ${displayAcara}
+                    <div class="fw-bold text-dark">${p.nama}</div>
+                    <div class="small mt-1 d-flex align-items-center">
+                        <span class="badge ${badgeClass} me-2" style="font-size:0.65rem">${eventCount}</span>
+                        <span class="text-secondary" style="font-size:0.8rem">${eventsDisplay}</span>
                     </div>
                 </td>
                 <td class="text-end">
-                    <button class="btn btn-sm btn-outline-primary shadow-sm" onclick="window.sediaEdit('${p.id}')" title="Edit Peserta">
-                        <i class="bi bi-pencil-square"></i>
-                    </button>
+                    <div class="btn-group">
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="window.sediaEdit('${p.id}')" title="Edit">
+                            <i class="bi bi-pencil-square"></i>
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="window.padamPeserta('${p.id}', '${p.nama}')" title="Padam">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
                 </td>
-            </tr>`;
-        });
-    }
+            </tr>
+        `;
+    });
 
     el.tbody.innerHTML = html;
-    el.labelJumlah.innerText = `${filteredData.length} Orang`;
+    el.labelJumlah.innerText = `${filtered.length} Orang`;
 }
 
-// Event Listeners untuk Filter
+// Event Listeners untuk Filter/Search
 el.filterKat.addEventListener('change', renderJadual);
 el.inputCarian.addEventListener('input', renderJadual);
 
 
 // =========================================================
-// 6. FUNGSI: IMPORT CSV (BULK UPLOAD)
+// BAHAGIAN 6: FUNGSI EDIT & PADAM
+// =========================================================
+
+// Diasingkan ke window scope supaya boleh dipanggil dari onclick HTML
+window.sediaEdit = async function(id) {
+    const peserta = globalPesertaList.find(p => p.id === id);
+    if (!peserta) return;
+
+    // Masukkan data ke dalam form
+    el.id.value = peserta.id;
+    el.nama.value = peserta.nama;
+    el.kat.value = peserta.kategori;
+    el.bib.value = peserta.noBib;
+
+    // Tukar UI Button
+    el.btnDaftar.innerHTML = '<i class="bi bi-check-circle me-1"></i> Kemaskini Data';
+    el.btnDaftar.className = 'btn btn-warning shadow-sm fw-bold text-dark';
+    el.btnBatal.classList.remove('d-none');
+
+    // Load acara dan tick checkbox yang berkaitan
+    await muatAcara(peserta.kategori, peserta.acaraDaftar);
+
+    // Scroll ke atas
+    document.querySelector('.card-body').scrollIntoView({ behavior: 'smooth' });
+};
+
+window.padamPeserta = async function(id, nama) {
+    if (confirm(`Adakah anda pasti mahu memadam atlet ini?\n\nNama: ${nama}\n\nTindakan ini tidak boleh dikembalikan.`)) {
+        try {
+            // Jika modul anda ada fungsi deleteParticipant
+            if (typeof deleteParticipant === 'function') {
+                await deleteParticipant(tahunAktif, id);
+                alert("Atlet berjaya dipadam.");
+                muatSenaraiPeserta();
+            } else {
+                alert("Fungsi padam belum diaktifkan dalam sistem.");
+            }
+        } catch (err) {
+            alert("Ralat memadam: " + err.message);
+        }
+    }
+};
+
+
+// =========================================================
+// BAHAGIAN 7: IMPORT CSV (DENGAN LAPORAN PENUH)
 // =========================================================
 
 window.prosesCSV = async function() {
-    const inputFail = document.getElementById('failCsv');
-    const statusDiv = document.getElementById('status-upload');
-    const file = inputFail.files[0];
-
+    const file = el.inputCsv.files[0];
     if (!file) {
-        alert("Sila pilih fail dahulu!");
+        alert("Sila pilih fail CSV terlebih dahulu.");
         return;
     }
 
-    statusDiv.innerHTML = '<span class="text-primary fw-bold"><div class="spinner-border spinner-border-sm"></div> Sedang membaca fail...</span>';
+    el.statusCsv.innerHTML = '<div class="alert alert-info py-2"><span class="spinner-border spinner-border-sm"></span> Sedang memproses fail... Sila tunggu.</div>';
 
     const reader = new FileReader();
-
     reader.onload = async function(e) {
         const text = e.target.result;
-        const baris = text.split('\n'); // Pecahkan ikut baris
+        const lines = text.split('\n');
         
-        let berjaya = 0;
-        let gagal = 0;
-        let jumlahProses = 0;
+        let successCount = 0;
+        let failCount = 0;
+        let failLog = [];
 
-        // Loop bermula index 1 (anggap ada header)
-        for (let i = 1; i < baris.length; i++) {
-            const row = baris[i].trim();
-            if (row) {
-                const cols = row.split(',');
-                
-                // Pastikan ada sekurang-kurangnya 3 lajur
-                if (cols.length >= 3) {
-                    jumlahProses++;
-                    const nama = cols[0].trim().toUpperCase().replace(/"/g, ''); // Buang quote jika ada
-                    const kategori = cols[1].trim().toUpperCase().replace(/"/g, '');
-                    const noBib = cols[2].trim().toUpperCase().replace(/"/g, '');
+        // Loop bermula dari 1 untuk skip header
+        for (let i = 1; i < lines.length; i++) {
+            const row = lines[i].trim();
+            if (!row) continue; // Skip baris kosong
 
-                    // Data Objek untuk API
-                    const dataBaru = {
-                        nama: nama,
-                        kategori: kategori,
-                        noBib: noBib,
-                        idRumah: idRumah,
-                        rumah: namaRumah,
-                        acaraDaftar: [], // Default kosong untuk CSV
-                        kemaskiniOleh: 'guru (csv)',
-                        tarikhDaftar: new Date().toISOString()
-                    };
+            const cols = row.split(',');
+            // Jangkaan: Nama, Kategori, NoBib
+            if (cols.length >= 3) {
+                const nama = cols[0].trim().toUpperCase().replace(/["']/g, "");
+                const kat = cols[1].trim().toUpperCase().replace(/["']/g, "");
+                const bib = cols[2].trim().toUpperCase().replace(/["']/g, "");
 
+                if (nama && kat) {
                     try {
-                        statusDiv.innerHTML = `<span class="text-primary">Mendaftar ${nama}...</span>`;
-                        // Panggil API (Await supaya sequential)
-                        await registerParticipant(tahunAktif, dataBaru);
-                        berjaya++;
+                        await registerParticipant(tahunAktif, {
+                            nama: nama,
+                            kategori: kat,
+                            noBib: bib,
+                            idRumah: idRumah,
+                            rumah: namaRumah,
+                            acaraDaftar: [],
+                            kemaskiniOleh: 'import_csv',
+                            tarikhDaftar: new Date().toISOString()
+                        });
+                        successCount++;
                     } catch (err) {
-                        console.error("Gagal daftar:", nama, err);
-                        gagal++;
+                        failCount++;
+                        failLog.push(`${nama} (${err.message})`);
                     }
                 }
             }
         }
 
-        statusDiv.innerHTML = `
-            <div class="alert alert-success mt-2 py-2">
-                <h6 class="alert-heading fw-bold">Selesai!</h6>
-                <div class="small">
-                    Berjaya: <strong>${berjaya}</strong><br>
-                    Gagal: <strong>${gagal}</strong>
+        // Papar Laporan
+        let laporanHTML = `
+            <div class="alert alert-${failCount > 0 ? 'warning' : 'success'} mt-3">
+                <h6 class="alert-heading fw-bold">Laporan Import</h6>
+                <hr>
+                <p class="mb-0">Berjaya: <strong>${successCount}</strong></p>
+                <p class="mb-0">Gagal: <strong>${failCount}</strong></p>
+            </div>
+        `;
+
+        if (failCount > 0) {
+            laporanHTML += `
+                <div class="border rounded p-2 bg-light" style="max-height: 100px; overflow-y: auto;">
+                    <small class="text-danger fw-bold">Senarai Gagal:</small><br>
+                    <small class="text-muted">${failLog.join('<br>')}</small>
                 </div>
-            </div>`;
-        
-        if (berjaya > 0) {
-            alert(`Proses selesai.\n${berjaya} atlet berjaya didaftarkan.`);
-            muatSenaraiPeserta(); // Refresh senarai
+            `;
         }
+
+        el.statusCsv.innerHTML = laporanHTML;
+        
+        if (successCount > 0) {
+            muatSenaraiPeserta();
+        }
+    };
+
+    reader.onerror = () => {
+        el.statusCsv.innerHTML = '<div class="text-danger">Ralat membaca fail.</div>';
     };
 
     reader.readAsText(file);
@@ -351,149 +493,170 @@ window.prosesCSV = async function() {
 
 
 // =========================================================
-// 7. FUNGSI: CETAK SENARAI
+// BAHAGIAN 8: CETAK SENARAI (CUSTOM SORT L7-L12)
 // =========================================================
+
+// Fungsi Helper: Dapatkan nombor daripada string kategori (Cth: L7 -> 7)
+function getNomborKategori(kategoriStr) {
+    // Buang semua huruf, tinggal nombor sahaja
+    const nombor = kategoriStr.replace(/\D/g, ''); 
+    return parseInt(nombor) || 0; // Return 0 jika tiada nombor
+}
+
+// Fungsi Sort Khas: Susun ikut nombor (7, 8, 9...), jika sama susun ikut nama
+function susunanKhasUmur(a, b) {
+    const numA = getNomborKategori(a.kategori);
+    const numB = getNomborKategori(b.kategori);
+
+    // Bandingkan nombor dahulu
+    if (numA < numB) return -1; // A lebih kecil (muda)
+    if (numA > numB) return 1;  // A lebih besar (tua)
+
+    // Jika umur sama, susun ikut Nama (Abjad)
+    return a.nama.localeCompare(b.nama);
+}
 
 window.cetakSenarai = function() {
     if (globalPesertaList.length === 0) {
-        alert("Tiada data untuk dicetak.");
+        alert("Tiada data peserta untuk dicetak.");
         return;
     }
 
-    // 1. Susun data: Kategori -> Nama
-    const dataCetak = [...globalPesertaList].sort((a, b) => {
-        if (a.kategori < b.kategori) return -1;
-        if (a.kategori > b.kategori) return 1;
-        if (a.nama < b.nama) return -1;
-        if (a.nama > b.nama) return 1;
-        return 0;
-    });
+    // 1. Asingkan Data Lelaki dan Perempuan
+    const dataLelaki = globalPesertaList.filter(p => p.kategori.startsWith('L'));
+    const dataPerempuan = globalPesertaList.filter(p => p.kategori.startsWith('P'));
 
-    // 2. Setup Tetingkap
-    const tetingkapCetak = window.open('', '', 'height=600,width=800');
-    const tarikh = new Date().toLocaleDateString('ms-MY');
-    const masa = new Date().toLocaleTimeString('ms-MY');
+    // 2. Susun Data Mengikut Kehendak (L7 -> L12)
+    dataLelaki.sort(susunanKhasUmur);
+    dataPerempuan.sort(susunanKhasUmur);
 
-    // 3. Tulis HTML Cetakan
-    let htmlContent = `
+    // 3. Buka Tetingkap Popup
+    const w = window.open('', '_blank', 'width=900,height=800');
+    const tarikh = new Date().toLocaleDateString('ms-MY', { day: 'numeric', month: 'long', year: 'numeric' });
+
+    // 4. Fungsi Menjana Baris Jadual (HTML String)
+    const binaBarisJadual = (senarai) => {
+        if (senarai.length === 0) return '<tr><td colspan="5" class="text-center fst-italic py-3">- Tiada Peserta -</td></tr>';
+
+        let html = '';
+        let counter = 1;
+        let prevKat = '';
+
+        senarai.forEach(p => {
+            const acaraStr = (Array.isArray(p.acaraDaftar) && p.acaraDaftar.length > 0) 
+                             ? p.acaraDaftar.join(', ') 
+                             : '-';
+            
+            // Buat garisan tebal sedikit bila kategori berubah (untuk visual jelas)
+            const styleRow = (prevKat !== '' && prevKat !== p.kategori) ? 'border-top: 2px solid #aaa;' : '';
+
+            html += `
+                <tr style="${styleRow}">
+                    <td class="center">${counter++}</td>
+                    <td class="center fw-bold">${p.kategori}</td>
+                    <td class="center">${p.noBib || ''}</td>
+                    <td style="padding-left:10px;">${p.nama}</td>
+                    <td style="font-size: 11px; padding-left:5px;">${acaraStr}</td>
+                </tr>
+            `;
+            prevKat = p.kategori;
+        });
+        return html;
+    };
+
+    // 5. Tulis Dokumen HTML Penuh
+    w.document.write(`
+        <!DOCTYPE html>
         <html>
         <head>
             <title>Senarai Peserta - ${namaRumah}</title>
             <style>
-                body { font-family: 'Times New Roman', serif; font-size: 12px; margin: 20px; }
-                .header { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #000; padding-bottom: 10px; }
-                h1 { margin: 0; font-size: 16px; text-transform: uppercase; letter-spacing: 1px; }
+                body { font-family: Arial, sans-serif; font-size: 12px; margin: 30px; color: #000; }
+                .header-doc { text-align: center; margin-bottom: 25px; border-bottom: 2px solid #000; padding-bottom: 15px; }
+                h1 { margin: 5px 0; font-size: 18px; text-transform: uppercase; letter-spacing: 1px; }
                 p { margin: 2px 0; font-size: 12px; }
-                table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-                th, td { border: 1px solid #000; padding: 4px 6px; text-align: left; vertical-align: top; }
-                th { background-color: #f0f0f0; font-weight: bold; font-size: 11px; text-transform: uppercase; }
-                .text-center { text-align: center; }
+                
+                .section-title { 
+                    background-color: #eee; 
+                    padding: 8px; 
+                    border: 1px solid #000; 
+                    text-align: center; 
+                    font-weight: bold; 
+                    font-size: 14px;
+                    margin-top: 20px;
+                    margin-bottom: 5px;
+                }
+
+                table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+                th, td { border: 1px solid #000; padding: 6px 4px; vertical-align: middle; }
+                th { background-color: #f2f2f2; font-size: 11px; text-transform: uppercase; }
+                
+                .center { text-align: center; }
+                .fw-bold { font-weight: bold; }
+                
+                /* Page Break untuk cetakan */
+                .page-break { page-break-before: always; }
                 @media print {
-                    @page { margin: 1cm; }
                     button { display: none; }
                 }
             </style>
         </head>
         <body>
-            <div class="header">
-                <h1>SENARAI PENDAFTARAN ATLET KEJOHANAN OLAHRAGA TAHUNAN</h1>
-                <p><strong>RUMAH SUKAN:</strong> ${namaRumah} (${tahunAktif})</p>
-                <p style="font-size: 10px; color: #555;">Dicetak pada: ${tarikh} (${masa})</p>
+            <div class="header-doc">
+                <h1>SENARAI PENDAFTARAN ATLET KEJOHANAN</h1>
+                <p><strong>RUMAH SUKAN:</strong> ${namaRumah.toUpperCase()} | <strong>TAHUN:</strong> ${tahunAktif}</p>
+                <p style="font-size: 10px; color: #555;">Tarikh Cetakan: ${tarikh}</p>
             </div>
 
+            <div class="section-title">KATEGORI LELAKI (L7 - L12)</div>
             <table>
                 <thead>
                     <tr>
-                        <th width="5%" class="text-center">Bil</th>
-                        <th width="10%" class="text-center">No. Bib</th>
+                        <th width="5%" class="center">Bil</th>
+                        <th width="8%" class="center">Kat</th>
+                        <th width="10%" class="center">No. Bib</th>
                         <th width="40%">Nama Atlet</th>
-                        <th width="10%" class="text-center">Kategori</th>
-                        <th width="35%">Acara</th>
+                        <th width="37%">Acara</th>
                     </tr>
                 </thead>
                 <tbody>
-    `;
-
-    let bil = 1;
-    dataCetak.forEach(p => {
-        const acara = Array.isArray(p.acaraDaftar) && p.acaraDaftar.length > 0 
-                      ? p.acaraDaftar.join(', ') 
-                      : '-';
-        htmlContent += `
-            <tr>
-                <td class="text-center">${bil++}</td>
-                <td class="text-center">${p.noBib || ''}</td>
-                <td>${p.nama}</td>
-                <td class="text-center">${p.kategori}</td>
-                <td>${acara}</td>
-            </tr>
-        `;
-    });
-
-    htmlContent += `
+                    ${binaBarisJadual(dataLelaki)}
                 </tbody>
             </table>
+
+            <div class="section-title">KATEGORI PEREMPUAN (P7 - P12)</div>
+            <table>
+                <thead>
+                    <tr>
+                        <th width="5%" class="center">Bil</th>
+                        <th width="8%" class="center">Kat</th>
+                        <th width="10%" class="center">No. Bib</th>
+                        <th width="40%">Nama Atlet</th>
+                        <th width="37%">Acara</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${binaBarisJadual(dataPerempuan)}
+                </tbody>
+            </table>
+
             <br>
-            <div style="text-align: center; font-size: 10px; margin-top: 20px;">
-                - Akhir Dokumen -
+            <div style="text-align: center; font-size: 10px; margin-top: 30px;">
+                Dicetak oleh Sistem Kejohanan Olahraga (KOT)
             </div>
+
+            <script>
+                // Auto Print
+                setTimeout(() => {
+                    window.print();
+                    window.close();
+                }, 800);
+            </script>
         </body>
         </html>
-    `;
+    `);
 
-    tetingkapCetak.document.write(htmlContent);
-    tetingkapCetak.document.close();
-    tetingkapCetak.focus();
-    
-    // Auto print selepas load
-    setTimeout(() => {
-        tetingkapCetak.print();
-        tetingkapCetak.close();
-    }, 500);
+    w.document.close();
 };
 
-
-// =========================================================
-// 8. FUNGSI: SETUP EDIT
-// =========================================================
-
-window.sediaEdit = async (id) => {
-    // Cari data dalam cache global
-    const p = globalPesertaList.find(item => item.id === id);
-    
-    if (p) {
-        // Isi Form
-        el.id.value = p.id;
-        el.bib.value = p.noBib || '';
-        el.nama.value = p.nama;
-        el.kat.value = p.kategori;
-        
-        // Tukar butang kepada Mode Edit
-        el.btnDaftar.innerHTML = `<i class="bi bi-pencil-square me-1"></i> Simpan Perubahan`;
-        el.btnDaftar.classList.remove('btn-primary');
-        el.btnDaftar.classList.add('btn-warning');
-        el.btnBatal.classList.remove('d-none');
-        
-        // Load Acara untuk kategori ini DAN tandakan yang dah daftar
-        await muatAcara(p.kategori, p.acaraDaftar);
-        
-        // Scroll ke atas dan fokus
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-        el.nama.focus();
-    }
-};
-
-el.btnBatal.onclick = () => resetBorang();
-
-// Butang Logout
-document.getElementById('btn-logout').onclick = () => {
-    if(confirm("Anda pasti mahu log keluar?")) {
-        sessionStorage.clear();
-        window.location.href = 'login.html';
-    }
-};
-
-// =========================================================
-// MULAKAN SISTEM
-// =========================================================
-muatSenaraiPeserta();
+// Tamat Fail
