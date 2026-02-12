@@ -1,11 +1,9 @@
 // =========================================================
 // FAIL: js/modules/guru.js
+// PEMBETULAN: Menukar "sukantara" kepada "kejohanan"
 // =========================================================
 
-// Import DB yang telah di-initialise di firebase-config.js
 import { db } from '../firebase-config.js'; 
-
-// PENTING: Gunakan versi 11.1.0 sama seperti dalam firebase-config.js anda
 import { 
     collection, 
     doc, 
@@ -20,7 +18,9 @@ import {
 // 1. DAFTAR PESERTA
 export async function registerParticipant(tahun, data) {
     try {
-        const pesertaRef = doc(collection(db, "sukantara", tahun, "peserta"));
+        // PERUBAHAN DI SINI: Guna "kejohanan", bukan "sukantara"
+        const pesertaRef = doc(collection(db, "kejohanan", tahun, "peserta"));
+        
         const dataLengkap = { ...data, id: pesertaRef.id };
         await setDoc(pesertaRef, dataLengkap);
         return { success: true, id: pesertaRef.id };
@@ -33,7 +33,8 @@ export async function registerParticipant(tahun, data) {
 // 2. KEMASKINI DATA
 export async function updateParticipant(tahun, docId, data) {
     try {
-        const pesertaRef = doc(db, "sukantara", tahun, "peserta", docId);
+        // PERUBAHAN DI SINI
+        const pesertaRef = doc(db, "kejohanan", tahun, "peserta", docId);
         await updateDoc(pesertaRef, data);
         return { success: true };
     } catch (error) {
@@ -42,10 +43,11 @@ export async function updateParticipant(tahun, docId, data) {
     }
 }
 
-// 3. PADAM PESERTA (Wajib ada)
+// 3. PADAM PESERTA
 export async function deleteParticipant(tahun, docId) {
     try {
-        const pesertaRef = doc(db, "sukantara", tahun, "peserta", docId);
+        // PERUBAHAN DI SINI
+        const pesertaRef = doc(db, "kejohanan", tahun, "peserta", docId);
         await deleteDoc(pesertaRef);
         return { success: true };
     } catch (error) {
@@ -57,7 +59,8 @@ export async function deleteParticipant(tahun, docId) {
 // 4. DAPATKAN SENARAI ACARA
 export async function getEventsByCategory(tahun, kategori) {
     try {
-        const q = query(collection(db, "sukantara", tahun, "acara"));
+        // PERUBAHAN DI SINI (Pastikan folder acara juga ada dalam "kejohanan")
+        const q = query(collection(db, "kejohanan", tahun, "acara"));
         const snapshot = await getDocs(q);
         let events = [];
         snapshot.forEach((doc) => {
@@ -73,20 +76,26 @@ export async function getEventsByCategory(tahun, kategori) {
 // 5. DAPATKAN SENARAI PESERTA (Untuk Table)
 export async function getRegisteredParticipants(tahun, idRumah) {
     try {
+        // PERUBAHAN DI SINI: "kejohanan"
         const q = query(
-            collection(db, "sukantara", tahun, "peserta"),
+            collection(db, "kejohanan", tahun, "peserta"),
             where("idRumah", "==", idRumah)
         );
 
         const snapshot = await getDocs(q);
         let list = [];
+        
+        console.log(`DEBUG: Mencari di kejohanan/${tahun}/peserta untuk rumah ${idRumah}`); // Debug log
+        
         snapshot.forEach((doc) => {
             list.push({ id: doc.id, ...doc.data() });
         });
+        
+        console.log(`DEBUG: Jumpa ${list.length} data.`); // Debug log
         return list;
 
     } catch (error) {
         console.error("Ralat Senarai Peserta:", error);
-        throw error; // Ini akan ditangkap oleh main-guru.js
+        throw error;
     }
 }
