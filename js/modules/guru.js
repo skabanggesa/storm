@@ -1,125 +1,118 @@
-// Pastikan path ini betul mengikut struktur folder anda
+// =========================================================
+// FAIL: js/modules/guru.js
+// =========================================================
+
+// Import Database dari fail config
 import { db } from '../firebase-config.js'; 
+
+// Import fungsi Firestore dari CDN (Pastikan versi sama dengan firebase-config.js)
 import { 
     collection, 
     doc, 
     setDoc, 
-    updateDoc, 
-    deleteDoc,
     getDocs, 
     query, 
-    where 
+    where, 
+    updateDoc, 
+    deleteDoc 
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-// =========================================================
-// 1. DAFTAR PESERTA BARU
-// =========================================================
+/**
+ * 1. Mendaftar Peserta Baru
+ */
 export async function registerParticipant(tahun, data) {
     try {
-        // Validation data asas
-        if (!tahun || !data) throw new Error("Data tahun atau peserta tidak lengkap.");
-
-        // Guna doc() tanpa ID untuk auto-generate ID
+        // Create reference dengan Auto-ID
         const pesertaRef = doc(collection(db, "sukantara", tahun, "peserta"));
         
+        // Masukkan ID ke dalam data
         const dataLengkap = {
             ...data,
-            id: pesertaRef.id // Simpan ID dalam dokumen juga
+            id: pesertaRef.id
         };
 
         await setDoc(pesertaRef, dataLengkap);
         return { success: true, id: pesertaRef.id };
 
     } catch (error) {
-        console.error("DEBUG - Ralat Register:", error);
+        console.error("Ralat Daftar:", error);
         throw error;
     }
 }
 
-// =========================================================
-// 2. KEMASKINI DATA PESERTA
-// =========================================================
+/**
+ * 2. Mengemaskini Data Peserta
+ */
 export async function updateParticipant(tahun, docId, data) {
     try {
         const pesertaRef = doc(db, "sukantara", tahun, "peserta", docId);
         await updateDoc(pesertaRef, data);
         return { success: true };
     } catch (error) {
-        console.error("DEBUG - Ralat Update:", error);
+        console.error("Ralat Update:", error);
         throw error;
     }
 }
 
-// =========================================================
-// 3. PADAM PESERTA
-// =========================================================
+/**
+ * 3. Memadam Peserta
+ * (Wajib ada supaya main-guru.js tidak error)
+ */
 export async function deleteParticipant(tahun, docId) {
     try {
-        if (!docId) throw new Error("ID Peserta diperlukan.");
-        
         const pesertaRef = doc(db, "sukantara", tahun, "peserta", docId);
         await deleteDoc(pesertaRef);
         return { success: true };
     } catch (error) {
-        console.error("DEBUG - Ralat Delete:", error);
+        console.error("Ralat Padam:", error);
         throw error;
     }
 }
 
-// =========================================================
-// 4. DAPATKAN SENARAI ACARA
-// =========================================================
+/**
+ * 4. Mendapatkan Senarai Acara Mengikut Kategori
+ */
 export async function getEventsByCategory(tahun, kategori) {
     try {
-        const colRef = collection(db, "sukantara", tahun, "acara");
-        const snapshot = await getDocs(colRef);
+        const q = query(collection(db, "sukantara", tahun, "acara"));
+        const snapshot = await getDocs(q);
         
         let events = [];
         snapshot.forEach((doc) => {
-            events.push({ id: doc.id, ...doc.data() });
+            const data = doc.data();
+            // Di sini kita ambil semua acara dahulu
+            // Anda boleh tambah logic filter jika perlu
+            events.push({ id: doc.id, ...data });
         });
         return events;
 
     } catch (error) {
-        console.error("DEBUG - Ralat Get Acara:", error);
-        throw new Error("Gagal memuatkan senarai acara.");
+        console.error("Ralat Acara:", error);
+        throw error;
     }
 }
 
-// =========================================================
-// 5. DAPATKAN PESERTA (PUNCA RALAT ANDA)
-// =========================================================
+/**
+ * 5. Mendapatkan Senarai Peserta Berdaftar (Ikut Rumah)
+ */
 export async function getRegisteredParticipants(tahun, idRumah) {
-    // 1. Debugging Log - Lihat di Console Browser
-    console.log(`DEBUG: Meminta data peserta... Tahun: ${tahun}, ID Rumah: ${idRumah}`);
-
     try {
-        // Validasi input
-        if (!tahun) throw new Error("Tahun tidak ditemui (Undefined).");
-        if (!idRumah) throw new Error("ID Rumah tidak ditemui.");
-        if (!db) throw new Error("Sambungan DB (firebase-config) gagal.");
+        const q = query(
+            collection(db, "sukantara", tahun, "peserta"),
+            where("idRumah", "==", idRumah)
+        );
 
-        // 2. Setup Query
-        // Pastikan path: sukantara -> [tahun] -> peserta
-        const colRef = collection(db, "sukantara", tahun, "peserta");
-        const q = query(colRef, where("idRumah", "==", idRumah));
-
-        // 3. Execute
         const snapshot = await getDocs(q);
-        
         let list = [];
+        
         snapshot.forEach((doc) => {
             list.push({ id: doc.id, ...doc.data() });
         });
 
-        console.log(`DEBUG: Berjaya dapat ${list.length} peserta.`);
         return list;
 
     } catch (error) {
-        // Ini akan paparkan ralat sebenar dari Firebase di console
-        console.error("CRITICAL ERROR (getRegisteredParticipants):", error);
-        
-        // Buang mesej custom, kita mahu lihat error asal dulu
-        throw new Error(error.message); 
+        console.error("Ralat Senarai Peserta:", error);
+        throw error;
     }
 }
