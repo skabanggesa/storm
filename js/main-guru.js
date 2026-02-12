@@ -60,7 +60,6 @@ const el = {
     } else {
         console.error("Ralat: Butang ID 'btn-logout' tidak dijumpai dalam HTML.");
     }
-});
 
 // --- INIT ---
 document.addEventListener('DOMContentLoaded', () => {
@@ -364,4 +363,5 @@ window.cetakSenarai = function() {
 // Listeners
 el.filterKat.addEventListener('change', renderJadual);
 el.search.addEventListener('keyup', renderJadual);
+
 
