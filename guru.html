@@ -39,6 +39,13 @@
         .table-peserta td {
             vertical-align: middle;
         }
+        /* Style tambahan untuk input carian di header */
+        .header-tools {
+            background-color: #f8f9fc;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+        }
     </style>
 </head>
 <body>
@@ -67,8 +74,11 @@
             
             <div class="col-md-5 mb-4">
                 <div class="card shadow">
-                    <div class="card-header py-3">
+                    <div class="card-header py-3 d-flex justify-content-between align-items-center">
                         <h6 class="m-0 text-primary"><i class="bi bi-person-plus-fill me-1"></i> Pendaftaran Atlet</h6>
+                        <button class="btn btn-success btn-sm shadow-sm" data-bs-toggle="modal" data-bs-target="#modalImportCSV">
+                            <i class="bi bi-file-earmark-spreadsheet"></i> Import CSV
+                        </button>
                     </div>
                     <div class="card-body">
                         <form id="form-daftar-atlet">
@@ -127,17 +137,63 @@
 
             <div class="col-md-7">
                 <div class="card shadow">
-                    <div class="card-header py-3 d-flex justify-content-between align-items-center">
-                        <h6 class="m-0 text-primary">
-                            <i class="bi bi-people-fill me-1"></i> Senarai Atlet Terdaftar
-                        </h6>
+                    <div class="card-header py-3">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h6 class="m-0 text-primary fw-bold">
+                                <i class="bi bi-people-fill me-1"></i> Senarai Atlet Terdaftar
+                            </h6>
+                            <span class="badge bg-secondary" id="jumlah-peserta">0 Orang</span>
+                        </div>
+                        
+                        <div class="header-tools border-top pt-2 mt-2">
+                            <div class="row g-2">
+                                <div class="col-md-4">
+                                    <select id="filter-kategori" class="form-select form-select-sm shadow-sm">
+                                        <option value="SEMUA">Semua Kategori</option>
+                                        <option value="L7">L7</option>
+                                        <option value="L8">L8</option>
+                                        <option value="L9">L9</option>
+                                        <option value="L10">L10</option>
+                                        <option value="L11">L11</option>
+                                        <option value="L12">L12</option>
+                                        <option value="P7">P7</option>
+                                        <option value="P8">P8</option>
+                                        <option value="P9">P9</option>
+                                        <option value="P10">P10</option>
+                                        <option value="P11">P11</option>
+                                        <option value="P12">P12</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-8">
+                                    <div class="input-group input-group-sm shadow-sm">
+                                        <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                                        <input type="text" id="carian-nama" class="form-control" placeholder="Cari nama atau no bib...">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
+
                     <div class="card-body p-0">
                         <div id="list-peserta" class="table-responsive">
-                            <div class="text-center py-5">
-                                <div class="spinner-border spinner-border-sm text-primary"></div>
-                                <p class="small text-muted mt-2">Memuatkan senarai peserta...</p>
-                            </div>
+                            <table class="table table-hover table-peserta mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Kat</th>
+                                        <th>No.</th>
+                                        <th>Nama & Acara</th>
+                                        <th class="text-end">Tindakan</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td colspan="4" class="text-center py-5">
+                                            <div class="spinner-border spinner-border-sm text-primary"></div>
+                                            <p class="small text-muted mt-2">Memuatkan senarai peserta...</p>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 </div>
@@ -146,6 +202,39 @@
         </div>
     </div>
 
+    <div class="modal fade" id="modalImportCSV" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold text-primary">Muat Naik Data Pukal (CSV)</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info small">
+                        <strong>Format Fail CSV (3 Lajur):</strong><br>
+                        Sila pastikan fail anda mempunyai 3 lajur mengikut urutan:<br>
+                        1. Nama Atlet<br>
+                        2. Kategori (Contoh: L10, P12)<br>
+                        3. No. Badan (Contoh: M101)
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="failCsv" class="form-label">Pilih Fail (.csv)</label>
+                        <input class="form-control" type="file" id="failCsv" accept=".csv">
+                    </div>
+
+                    <div id="status-upload" class="small text-muted mt-2"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>
+                    <button type="button" class="btn btn-primary" onclick="prosesCSV()">Muat Naik Sekarang</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
     <script type="module" src="js/main-guru.js"></script>
 
 </body>
