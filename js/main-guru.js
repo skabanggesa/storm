@@ -46,6 +46,22 @@ const el = {
     statusFile: document.getElementById('status-upload')
 };
 
+// =======================================================
+    // PEMBETULAN: BUTANG KELUAR DILETAKKAN DI SINI
+    // =======================================================
+    const btnLogout = document.getElementById('btn-logout');
+    if (btnLogout) {
+        btnLogout.addEventListener('click', () => {
+            if(confirm("Adakah anda pasti mahu log keluar?")) {
+                sessionStorage.clear();
+                window.location.href = 'index.html'; // Atau login.html
+            }
+        });
+    } else {
+        console.error("Ralat: Butang ID 'btn-logout' tidak dijumpai dalam HTML.");
+    }
+});
+
 // --- INIT ---
 document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('nama-rumah').innerText = `RUMAH ${namaRumah ? namaRumah.toUpperCase() : ''}`;
@@ -348,3 +364,4 @@ window.cetakSenarai = function() {
 // Listeners
 el.filterKat.addEventListener('change', renderJadual);
 el.search.addEventListener('keyup', renderJadual);
+
