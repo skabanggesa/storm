@@ -98,7 +98,7 @@
                 <small class="text-muted text-uppercase tracking-wider">Sistem Pengurusan Kejohanan Olahraga Tahunan (KOT)</small>
             </div>
             <div class="text-end">
-                <button class="btn btn-outline-danger btn-sm fw-bold" onclick="location.href='login.html'">
+                <button id="btn-logout" class="btn btn-outline-danger btn-sm fw-bold">
                     <i class="bi bi-box-arrow-right"></i> Log Keluar
                 </button>
             </div>
@@ -124,9 +124,22 @@
                     <hr class="my-2">
                     
                     <div class="p-2">
-                        <label class="form-label small fw-bold text-muted">Utility:</label>
-                        <button class="btn btn-sm btn-outline-secondary w-100 text-start mb-2" id="btn-muat-naik-rekod">
-                            <i class="bi bi-file-earmark-spreadsheet me-1"></i> Muat Naik Rekod (.csv)
+                        <label class="form-label small fw-bold text-muted">Utility & Database:</label>
+                        
+                        <button class="btn btn-sm btn-outline-secondary w-100 text-start mb-2" id="btn-muat-naik-rekod" data-bs-toggle="modal" data-bs-target="#modalCSV">
+                            <i class="bi bi-file-earmark-spreadsheet me-2"></i> Muat Naik Rekod (.csv)
+                        </button>
+
+                        <button class="btn btn-sm btn-outline-primary w-100 text-start mb-2" id="btn-buka-backup" data-bs-toggle="modal" data-bs-target="#modalBackup">
+                            <i class="bi bi-cloud-download me-2"></i> Backup Data (Eksport)
+                        </button>
+
+                        <button class="btn btn-sm btn-outline-success w-100 text-start mb-2" id="btn-buka-restore" data-bs-toggle="modal" data-bs-target="#modalRestore">
+                            <i class="bi bi-cloud-upload me-2"></i> Restore Data (Import)
+                        </button>
+
+                        <button class="btn btn-sm btn-outline-danger w-100 text-start mb-2" id="btn-buka-padam" data-bs-toggle="modal" data-bs-target="#modalPadam">
+                            <i class="bi bi-trash-fill me-2"></i> Padam Data
                         </button>
                     </div>
                 </div>
@@ -147,7 +160,7 @@
     <div class="modal fade" id="modalCSV" tabindex="-1">
         <div class="modal-dialog">
             <div class="modal-content">
-                <div class="modal-header bg-primary text-white">
+                <div class="modal-header bg-secondary text-white">
                     <h5 class="modal-title"><i class="bi bi-upload me-2"></i>Muat Naik Rekod Kejohanan</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
@@ -161,23 +174,114 @@
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>
-                    <button type="button" class="btn btn-primary" id="btn-proses-csv">Mula Proses</button>
+                    <button type="button" class="btn btn-light border" data-bs-dismiss="modal">Batal</button>
+                    <button type="button" class="btn btn-secondary" id="btn-proses-csv">Mula Proses</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="modalBackup" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title"><i class="bi bi-cloud-download me-2"></i>Backup Data (Eksport)</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted">Fungsi ini akan memuat turun semua data (peserta, acara, keputusan) ke dalam bentuk fail <strong>.json</strong> untuk simpanan anda.</p>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Pilih Tahun untuk Backup:</label>
+                        <select id="select-backup-tahun" class="form-select">
+                            <option value="">-- Muat turun Semua Tahun --</option>
+                            <option value="2024">2024</option>
+                            <option value="2025">2025</option>
+                            <option value="2026">2026</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-light border" data-bs-dismiss="modal">Batal</button>
+                    <button type="button" class="btn btn-primary" id="btn-laksana-backup"><i class="bi bi-download me-1"></i> Muat Turun Backup</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="modalRestore" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-success text-white">
+                    <h5 class="modal-title"><i class="bi bi-cloud-upload me-2"></i>Restore Data (Import)</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-warning py-2 small">
+                        <i class="bi bi-exclamation-triangle-fill me-1"></i> <strong>Amaran:</strong> Memuat naik fail backup (.json) akan menulis ganti (overwrite) data sedia ada di dalam pangkalan data.
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Pilih Fail Backup (.json):</label>
+                        <input type="file" id="file-restore" class="form-control" accept=".json">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-light border" data-bs-dismiss="modal">Batal</button>
+                    <button type="button" class="btn btn-success" id="btn-laksana-restore"><i class="bi bi-upload me-1"></i> Muat Naik Data</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="modalPadam" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content border-danger">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title"><i class="bi bi-trash-fill me-2"></i>Padam Data</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-danger fw-bold">TINDAKAN INI TIDAK BOLEH DIKEMBALIKAN!</p>
+                    <p class="text-muted small">Sila pastikan anda telah membuat <strong>Backup Data</strong> terlebih dahulu sebelum melakukan pemadaman.</p>
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Pilih Data Untuk Dipadam:</label>
+                        <select id="select-padam-jenis" class="form-select mb-2">
+                            <option value="peserta">Padam Semua Peserta Sahaja</option>
+                            <option value="keputusan">Padam Semua Keputusan Sahaja</option>
+                            <option value="semua">Padam KESELURUHAN Data Kejohanan</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-2">
+                        <label class="form-label small">Sila taip <strong>SAH PADAM</strong> untuk mengesahkan:</label>
+                        <input type="text" id="input-pengesahan-padam" class="form-control border-danger" placeholder="Taip di sini...">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-light border" data-bs-dismiss="modal">Batal</button>
+                    <button type="button" class="btn btn-danger disabled" id="btn-laksana-padam">Padam Sekarang</button>
                 </div>
             </div>
         </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    
     <script type="module" src="js/main-admin.js"></script>
 
     <script>
-        document.getElementById('btn-muat-naik-rekod')?.addEventListener('click', () => {
-            const modalElement = document.getElementById('modalCSV');
-            if (modalElement) {
-                const modal = new bootstrap.Modal(modalElement);
-                modal.show();
+        document.addEventListener('DOMContentLoaded', () => {
+            // Logik keselamatan untuk Modal Padam Data
+            const inputPengesahan = document.getElementById('input-pengesahan-padam');
+            const btnPadam = document.getElementById('btn-laksana-padam');
+
+            if(inputPengesahan && btnPadam) {
+                inputPengesahan.addEventListener('keyup', (e) => {
+                    if (e.target.value === 'SAH PADAM') {
+                        btnPadam.classList.remove('disabled');
+                    } else {
+                        btnPadam.classList.add('disabled');
+                    }
+                });
             }
         });
     </script>
