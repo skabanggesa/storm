@@ -1,3 +1,12 @@
+/**
+ * ==============================================================================
+ * SISTEM PENGURUSAN KEJOHANAN OLAHRAGA TAHUNAN (KOT)
+ * FAIL: main-admin.js
+ * FUNGSI: Menguruskan antaramuka Admin, Setup, Acara, Keputusan & Utiliti Data
+ * DIKEMASKINI DENGAN: Fungsi Backup, Restore, dan Padam Data
+ * ==============================================================================
+ */
+
 import { 
     initializeTournament, 
     getEventsReadyForResults, 
@@ -9,31 +18,48 @@ import {
     ACARA_PADANG,
     ACARA_KHAS
 } from './modules/admin.js';
+
 import { highJumpLogic } from './modules/highjump-logic.js'; 
 import { db } from './firebase-config.js';
 
-// --- IMPORT FIRESTORE (KEMASKINI: Ditambah 'setDoc') ---
+// --- IMPORT FIRESTORE ---
 import { 
     doc, 
     getDoc, 
     updateDoc, 
-    setDoc, // <--- PENTING: Untuk simpan kod rumah jika dokumen belum wujud
+    setDoc, 
     collection, 
     query, 
     where, 
-    getDocs 
+    getDocs,
+    writeBatch, // <--- Ditambah untuk fungsi Restore dan Padam Data secara pukal
+    deleteDoc   // <--- Ditambah untuk fungsi Padam Data
 } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
 
-// --- 0. TETAPAN TAHUN AKTIF ---
+// ==============================================================================
+// 0. TETAPAN TAHUN AKTIF & INISIALISASI
+// ==============================================================================
 let tahunAktif = sessionStorage.getItem("tahun_aktif") || new Date().getFullYear().toString(); 
 
-console.log("Sistem STORMS dimulakan...");
-console.log("Tahun yang dikesan dari Storan:", sessionStorage.getItem("tahun_aktif"));
-console.log("Tahun yang sedang digunakan oleh sistem:", tahunAktif);
+console.info("========================================");
+console.info("Sistem STORMS (Admin) dimulakan...");
+console.info("Tahun dari Storan:", sessionStorage.getItem("tahun_aktif"));
+console.info("Tahun aktif digunakan:", tahunAktif);
+console.info("========================================");
 
 const contentArea = document.getElementById('content-area');
 
-// --- 1. PENGURUSAN NAVIGASI ---
+// Fungsi Log Keluar
+document.getElementById('btn-logout')?.addEventListener('click', () => {
+    if(confirm("Adakah anda pasti mahu log keluar dari panel admin?")) {
+        sessionStorage.clear();
+        window.location.href = 'login.html';
+    }
+});
+
+// ==============================================================================
+// 1. PENGURUSAN NAVIGASI SIDEBAR
+// ==============================================================================
 document.getElementById('menu-setup')?.addEventListener('click', () => {
     switchActive('menu-setup');
     renderSetupForm();
@@ -49,14 +75,21 @@ document.getElementById('menu-keputusan')?.addEventListener('click', () => {
     renderSenaraiAcara('keputusan');
 });
 
+/**
+ * Fungsi untuk menukar kelas 'active' pada menu sidebar
+ * @param {string} activeId - ID elemen menu yang aktif
+ */
 function switchActive(activeId) {
     const menus = ['menu-setup', 'menu-acara', 'menu-keputusan'];
     menus.forEach(id => {
-        document.getElementById(id)?.classList.toggle('active', id === activeId);
+        const el = document.getElementById(id);
+        if(el) el.classList.toggle('active', id === activeId);
     });
 }
 
-// --- 2. LOGIK PROSES CSV ---
+// ==============================================================================
+// 2. FUNGSI UTILITI - MUAT NAIK REKOD (CSV)
+// ==============================================================================
 document.getElementById('btn-proses-csv')?.addEventListener('click', async () => {
     const fileInput = document.getElementById('file-csv');
     const btn = document.getElementById('btn-proses-csv');
@@ -64,8 +97,9 @@ document.getElementById('btn-proses-csv')?.addEventListener('click', async () =>
 
     if (!file) return alert("Sila pilih fail CSV rekod dahulu!");
 
+    // Halang butang ditekan dua kali
     btn.disabled = true;
-    btn.innerText = "Memproses...";
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Memproses...';
 
     const reader = new FileReader();
     reader.onload = async (e) => {
@@ -73,9 +107,12 @@ document.getElementById('btn-proses-csv')?.addEventListener('click', async () =>
         const lines = text.split('\n');
         const records = [];
 
+        // Loop melalui setiap baris CSV (Abaikan baris 0 / Header)
         for (let i = 1; i < lines.length; i++) {
             const line = lines[i].trim();
             if (!line) continue;
+            
+            // Format dijangka: REKOD, ACARA, KATEGORI, TAHUN, NAMA
             const [rekod, acara, kategori, tahun, nama] = line.split(',');
             if (rekod && acara && kategori) {
                 records.push({
@@ -91,70 +128,385 @@ document.getElementById('btn-proses-csv')?.addEventListener('click', async () =>
         if (records.length > 0) {
             try {
                 await saveBulkRecords(records);
-                alert(`${records.length} Rekod Berjaya Dikemaskini!`);
-                location.reload();
+                alert(`Tahniah! ${records.length} Rekod Berjaya Dikemaskini.`);
+                
+                // Tutup modal secara automatik
+                const modalEl = document.getElementById('modalCSV');
+                const modal = bootstrap.Modal.getInstance(modalEl);
+                if(modal) modal.hide();
+                
             } catch (err) {
-                alert("Ralat: " + err.message);
+                console.error("Ralat CSV:", err);
+                alert("Ralat semasa memproses fail: " + err.message);
             }
+        } else {
+            alert("Tiada data sah dijumpai dalam fail CSV tersebut.");
         }
+        
+        // Kembalikan butang kepada asal
         btn.disabled = false;
-        btn.innerText = "Proses Fail";
+        btn.innerText = "Mula Proses";
+        fileInput.value = ""; // Reset input fail
     };
     reader.readAsText(file);
 });
 
-// --- 3. SETUP KEJOHANAN & RUMAH SUKAN (KEMASKINI) ---
+
+// ==============================================================================
+// 3. FUNGSI UTILITI BARU - BACKUP DATA (EKSPORT KE JSON)
+// ==============================================================================
+document.getElementById('btn-laksana-backup')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-laksana-backup');
+    const selectTahun = document.getElementById('select-backup-tahun');
+    const tahunPilihan = selectTahun ? selectTahun.value : "";
+    
+    // UI Loading State
+    const teksAsal = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Menyediakan Backup...';
+    btn.disabled = true;
+
+    try {
+        console.log(`Memulakan proses Backup... Tahun: ${tahunPilihan || "SEMUA"}`);
+        let backupData = {};
+        
+        // Senarai tahun yang perlu disedut. Jika tiada pilihan, kita letak tahunAktif sahaja untuk keselamatan 
+        // (atau kita boleh benarkan pilihan semua tahun jika database tak terlalu besar).
+        const senaraiTahun = tahunPilihan ? [tahunPilihan] : [tahunAktif]; 
+
+        for (const tahun of senaraiTahun) {
+            backupData[tahun] = { peserta: {}, acara: {}, rumah: {} };
+
+            // 3.1 Dapatkan Data Peserta
+            console.log(`Menyedut data peserta untuk tahun ${tahun}...`);
+            const pesertaSnap = await getDocs(collection(db, "kejohanan", tahun, "peserta"));
+            pesertaSnap.forEach(doc => {
+                backupData[tahun].peserta[doc.id] = doc.data();
+            });
+
+            // 3.2 Dapatkan Data Rumah Sukan
+            console.log(`Menyedut data rumah untuk tahun ${tahun}...`);
+            const rumahSnap = await getDocs(collection(db, "kejohanan", tahun, "rumah"));
+            rumahSnap.forEach(doc => {
+                backupData[tahun].rumah[doc.id] = doc.data();
+            });
+
+            // 3.3 Dapatkan Data Acara (Beserta Saringan/Heats)
+            console.log(`Menyedut data acara untuk tahun ${tahun}...`);
+            const acaraSnap = await getDocs(collection(db, "kejohanan", tahun, "acara"));
+            
+            for (const acaraDoc of acaraSnap.docs) {
+                const acaraData = acaraDoc.data();
+                backupData[tahun].acara[acaraDoc.id] = {
+                    ...acaraData,
+                    saringan: {} // Subcollection untuk saringan
+                };
+
+                // Dapatkan Saringan untuk setiap acara
+                const saringanSnap = await getDocs(collection(db, "kejohanan", tahun, "acara", acaraDoc.id, "saringan"));
+                saringanSnap.forEach(saringanDoc => {
+                    backupData[tahun].acara[acaraDoc.id].saringan[saringanDoc.id] = saringanDoc.data();
+                });
+            }
+        }
+
+        // 3.4 Tukar objek JavaScript ke bentuk JSON String
+        const dataStr = JSON.stringify(backupData, null, 2);
+        
+        // 3.5 Cipta fungsi "Muat Turun" dalam pelayar web
+        const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+        const exportFileDefaultName = `Backup_KOT_${tahunPilihan || "Semua"}_${new Date().toISOString().slice(0,10)}.json`;
+
+        let linkElement = document.createElement('a');
+        linkElement.setAttribute('href', dataUri);
+        linkElement.setAttribute('download', exportFileDefaultName);
+        linkElement.click(); // Trigger muat turun automatik
+
+        alert("Berjaya! Fail backup telah sedia dimuat turun.");
+        
+        // Tutup modal
+        const modalEl = document.getElementById('modalBackup');
+        const modal = bootstrap.Modal.getInstance(modalEl);
+        if(modal) modal.hide();
+
+    } catch (error) {
+        console.error("Ralat semasa Backup:", error);
+        alert("Gagal melakukan backup. Sila lihat konsol untuk butiran. Mesej: " + error.message);
+    } finally {
+        btn.innerHTML = teksAsal;
+        btn.disabled = false;
+    }
+});
+
+
+// ==============================================================================
+// 4. FUNGSI UTILITI BARU - RESTORE DATA (IMPORT DARI JSON)
+// ==============================================================================
+document.getElementById('btn-laksana-restore')?.addEventListener('click', async () => {
+    const fileInput = document.getElementById('file-restore');
+    const btn = document.getElementById('btn-laksana-restore');
+    const file = fileInput.files[0];
+
+    if (!file) return alert("Sila pilih fail backup (.json) terlebih dahulu!");
+    if (!confirm("AMARAN TERAKHIR: Proses ini akan menulis ganti (overwrite) data sedia ada di pangkalan data anda. Adakah anda pasti?")) return;
+
+    // UI Loading State
+    const teksAsal = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Memuat Naik...';
+    btn.disabled = true;
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        try {
+            const rawData = e.target.result;
+            const backupData = JSON.parse(rawData); // Parse teks JSON ke bentuk Objek
+
+            console.log("Struktur data berjaya di-parse. Memulakan muat naik ke Firestore...");
+            let jumlahOperasi = 0;
+
+            // Kita gunakan Firebase Batch untuk memuat naik data dengan efisien.
+            // Nota: Firebase batch ada had maksimum 500 operasi serentak.
+            // Untuk memastikan ia tidak ralat, kita buat 'chunking' (bahagian).
+            let batch = writeBatch(db);
+            let operasiBatchSemasa = 0;
+
+            // Fungsi helper untuk commit batch jika cecah had
+            const semakBatch = async () => {
+                if (operasiBatchSemasa >= 450) { // Letak 450 sbg margin selamat
+                    console.log("Menghantar batch ke server...");
+                    await batch.commit();
+                    batch = writeBatch(db); // Buka batch baru
+                    operasiBatchSemasa = 0;
+                }
+            };
+
+            // Loop melalui setiap Tahun dalam fail JSON
+            for (const [tahun, dataTahun] of Object.entries(backupData)) {
+                
+                // 4.1 Restore Peserta
+                if (dataTahun.peserta) {
+                    for (const [idPeserta, dataPeserta] of Object.entries(dataTahun.peserta)) {
+                        const ref = doc(db, "kejohanan", tahun, "peserta", idPeserta);
+                        batch.set(ref, dataPeserta, { merge: true });
+                        operasiBatchSemasa++;
+                        jumlahOperasi++;
+                        await semakBatch();
+                    }
+                }
+
+                // 4.2 Restore Rumah
+                if (dataTahun.rumah) {
+                    for (const [idRumah, dataRumah] of Object.entries(dataTahun.rumah)) {
+                        const ref = doc(db, "kejohanan", tahun, "rumah", idRumah);
+                        batch.set(ref, dataRumah, { merge: true });
+                        operasiBatchSemasa++;
+                        jumlahOperasi++;
+                        await semakBatch();
+                    }
+                }
+
+                // 4.3 Restore Acara & Saringan
+                if (dataTahun.acara) {
+                    for (const [idAcara, dataAcara] of Object.entries(dataTahun.acara)) {
+                        // Asingkan subcollection 'saringan' sebelum simpan acara
+                        const { saringan, ...dataAcaraTulen } = dataAcara; 
+                        
+                        const refAcara = doc(db, "kejohanan", tahun, "acara", idAcara);
+                        batch.set(refAcara, dataAcaraTulen, { merge: true });
+                        operasiBatchSemasa++;
+                        jumlahOperasi++;
+                        await semakBatch();
+
+                        // Restore subcollection saringan
+                        if (saringan) {
+                            for (const [idSaringan, dataSaringan] of Object.entries(saringan)) {
+                                const refSaringan = doc(db, "kejohanan", tahun, "acara", idAcara, "saringan", idSaringan);
+                                batch.set(refSaringan, dataSaringan, { merge: true });
+                                operasiBatchSemasa++;
+                                jumlahOperasi++;
+                                await semakBatch();
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Commit mana-mana baki yang tinggal dalam batch terakhir
+            if (operasiBatchSemasa > 0) {
+                await batch.commit();
+            }
+
+            alert(`Proses Restore Selesai! Sebanyak ${jumlahOperasi} dokumen telah dimuat naik.`);
+            
+            // Tutup modal
+            const modalEl = document.getElementById('modalRestore');
+            const modal = bootstrap.Modal.getInstance(modalEl);
+            if(modal) modal.hide();
+
+        } catch (error) {
+            console.error("Ralat semasa Restore:", error);
+            alert("Ralat memproses fail JSON. Sila pastikan format fail adalah tepat. Mesej: " + error.message);
+        } finally {
+            btn.innerHTML = teksAsal;
+            btn.disabled = false;
+            fileInput.value = ""; // Reset file input
+        }
+    };
+    reader.readAsText(file);
+});
+
+
+// ==============================================================================
+// 5. FUNGSI UTILITI BARU - PADAM DATA (DANGER ZONE)
+// ==============================================================================
+document.getElementById('btn-laksana-padam')?.addEventListener('click', async () => {
+    const jenisPadam = document.getElementById('select-padam-jenis').value;
+    const pengesahan = document.getElementById('input-pengesahan-padam').value;
+    const btn = document.getElementById('btn-laksana-padam');
+
+    if (pengesahan !== 'SAH PADAM') return; // Double check sekiranya dipintas
+
+    const teksAsal = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Memadam...';
+    btn.disabled = true;
+
+    try {
+        console.warn(`Memulakan proses Padam Data: Jenis -> ${jenisPadam}, Tahun -> ${tahunAktif}`);
+        let jumlahDipadam = 0;
+
+        // Fungsi Helper untuk padam koleksi besar 
+        // Menggunakan batch untuk mempercepatkan proses padam berbanding satu-satu
+        const padamKoleksi = async (pathRef) => {
+            const snapshot = await getDocs(pathRef);
+            let batch = writeBatch(db);
+            let counter = 0;
+
+            for (const docSnap of snapshot.docs) {
+                batch.delete(docSnap.ref);
+                counter++;
+                jumlahDipadam++;
+                
+                if (counter >= 450) {
+                    await batch.commit();
+                    batch = writeBatch(db);
+                    counter = 0;
+                }
+            }
+            if (counter > 0) await batch.commit();
+        };
+
+        if (jenisPadam === 'peserta' || jenisPadam === 'semua') {
+            console.log("Memadam Koleksi Peserta...");
+            await padamKoleksi(collection(db, "kejohanan", tahunAktif, "peserta"));
+        }
+
+        if (jenisPadam === 'keputusan' || jenisPadam === 'semua') {
+            console.log("Memadam Keputusan (Saringan)...");
+            // Untuk saringan, kita perlu cari semua acara dahulu
+            const acaraSnap = await getDocs(collection(db, "kejohanan", tahunAktif, "acara"));
+            for (const docAcara of acaraSnap.docs) {
+                // Padam Saringan dalam setiap acara
+                await padamKoleksi(collection(db, "kejohanan", tahunAktif, "acara", docAcara.id, "saringan"));
+            }
+        }
+
+        if (jenisPadam === 'semua') {
+            console.log("Memadam Acara Utama dan Rumah...");
+            await padamKoleksi(collection(db, "kejohanan", tahunAktif, "acara"));
+            await padamKoleksi(collection(db, "kejohanan", tahunAktif, "rumah"));
+        }
+
+        alert(`Proses Padam Selesai! ${jumlahDipadam} rekod telah dipadam dari pangkalan data tahun ${tahunAktif}.`);
+        
+        // Reset UI & Tutup
+        document.getElementById('input-pengesahan-padam').value = '';
+        btn.classList.add('disabled');
+        const modalEl = document.getElementById('modalPadam');
+        const modal = bootstrap.Modal.getInstance(modalEl);
+        if(modal) modal.hide();
+
+        // Refresh halaman jika padam semua
+        if (jenisPadam === 'semua') location.reload();
+
+    } catch (error) {
+        console.error("Ralat Padam Data:", error);
+        alert("Ralat semasa memadam data. Sila lihat konsol. Mesej: " + error.message);
+    } finally {
+        btn.innerHTML = teksAsal;
+        btn.disabled = false;
+    }
+});
+
+
+// ==============================================================================
+// 6. SETUP KEJOHANAN & RUMAH SUKAN
+// ==============================================================================
 function renderSetupForm() {
     contentArea.innerHTML = `
         <div class="row">
             <div class="col-md-6 mb-4">
                 <div class="card p-4 shadow-sm border-0 h-100">
                     <h4 class="text-primary"><i class="bi bi-database-fill-gear me-2"></i>Setup Awal</h4>
-                    <p class="text-muted small">Jana struktur database (acara & rumah) untuk tahun ${tahunAktif}.</p>
-                    <button class="btn btn-primary mt-auto" id="btn-init">Jana Struktur Data</button>
+                    <p class="text-muted small">Jana struktur database (acara & rumah) untuk tahun ${tahunAktif}. Proses ini diperlukan setiap kali membuka tahun baru.</p>
+                    <button class="btn btn-primary mt-auto" id="btn-init">
+                        <i class="bi bi-magic me-2"></i>Jana Struktur Data
+                    </button>
                 </div>
             </div>
             <div class="col-md-6 mb-4">
                 <div class="card p-4 shadow-sm border-0 h-100">
                     <h4 class="text-success"><i class="bi bi-shield-lock-fill me-2"></i>Akses Rumah Sukan</h4>
-                    <p class="text-muted small">Tetapkan atau kemaskini kata laluan untuk Guru Rumah Sukan.</p>
-                    <button class="btn btn-success mt-auto" id="btn-manage-house">Urus Kata Laluan Rumah</button>
+                    <p class="text-muted small">Tetapkan atau kemaskini kata laluan untuk Guru Rumah Sukan bagi proses pendaftaran atlet.</p>
+                    <button class="btn btn-success mt-auto" id="btn-manage-house">
+                        <i class="bi bi-key-fill me-2"></i>Urus Kata Laluan Rumah
+                    </button>
                 </div>
             </div>
         </div>
         
-        <div id="house-list-container" class="mt-4"></div>`;
+        <div id="house-list-container" class="mt-4"></div>
+    `;
     
-    // Event: Jana Struktur
+    // Event: Jana Struktur (Pre-load data)
     document.getElementById('btn-init').onclick = async () => {
-        if(!confirm(`Adakah anda pasti mahu menjana struktur data untuk tahun ${tahunAktif}?`)) return;
+        if(!confirm(`Adakah anda pasti mahu menjana struktur data untuk tahun ${tahunAktif}? Data acara kosong akan dimasukkan.`)) return;
         
+        // Contoh Data Acara Default
         const defaultEvents = [
             { nama: "100m", kategori: "L12", jenis: "Balapan" },
-            { nama: "Lompat Tinggi", kategori: "L12", jenis: "Padang" }
+            { nama: "Lompat Tinggi", kategori: "L12", jenis: "Padang" },
+            { nama: "Lompat Jauh", kategori: "L12", jenis: "Padang" },
+            { nama: "Lontar Peluru", kategori: "P12", jenis: "Padang" }
         ];
+
         const res = await initializeTournament(tahunAktif, defaultEvents);
-        if(res.success) alert("Struktur berjaya dijana!");
+        if(res.success) alert("Tahniah! Struktur database berjaya dijana. Sila pergi ke menu Urus Acara.");
         else alert("Ralat: " + res.message);
     };
 
-    // Event: Urus Rumah
+    // Event: Urus Rumah Sukan
     document.getElementById('btn-manage-house').onclick = () => {
         renderSenaraiRumah();
     };
 }
 
-// --- FUNGSI BARU: URUS KATA LALUAN RUMAH ---
+// ==============================================================================
+// 7. PENGURUSAN AKSES RUMAH SUKAN (KATA LALUAN)
+// ==============================================================================
 async function renderSenaraiRumah() {
     const container = document.getElementById('house-list-container');
-    container.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-success"></div><p class="mt-2">Memuatkan data rumah...</p></div>';
+    container.innerHTML = `
+        <div class="text-center py-4">
+            <div class="spinner-border text-success"></div>
+            <p class="mt-2 text-muted">Memuatkan data rumah dari pelayan...</p>
+        </div>
+    `;
 
-    // Senarai ID Rumah (Mesti huruf kecil)
+    // Senarai ID Rumah (Standard sekolah di Malaysia, ubah jika perlu)
     const rumahIds = ['merah', 'biru', 'hijau', 'kuning'];
     
     let html = `
         <div class="card border-0 shadow-sm animate__animated animate__fadeIn">
-            <div class="card-header bg-white fw-bold py-3">
+            <div class="card-header bg-white fw-bold py-3 border-bottom">
                 <i class="bi bi-key-fill me-2 text-warning"></i>Senarai Kod Akses Rumah Sukan (${tahunAktif})
             </div>
             <div class="card-body p-0">
@@ -167,10 +519,11 @@ async function renderSenaraiRumah() {
                                 <th width="150" class="text-center">Tindakan</th>
                             </tr>
                         </thead>
-                        <tbody>`;
+                        <tbody>
+    `;
 
     for (const id of rumahIds) {
-        // Dapatkan data dari Firebase
+        // Dapatkan data rumah semasa dari Firestore
         const docRef = doc(db, "kejohanan", tahunAktif, "rumah", id);
         const docSnap = await getDoc(docRef);
         let kodSemasa = '';
@@ -179,7 +532,7 @@ async function renderSenaraiRumah() {
             kodSemasa = docSnap.data().kod || '';
         }
 
-        // Warna badge untuk rumah
+        // Tetapkan warna badge rumah
         let badgeColor = 'secondary';
         if(id==='merah') badgeColor='danger';
         if(id==='biru') badgeColor='primary';
@@ -189,71 +542,103 @@ async function renderSenaraiRumah() {
         html += `
             <tr>
                 <td class="ps-4">
-                    <span class="badge bg-${badgeColor} p-2 px-3 rounded-pill text-uppercase">${id}</span>
+                    <span class="badge bg-${badgeColor} p-2 px-3 rounded-pill text-uppercase shadow-sm" style="min-width: 80px;">
+                        ${id}
+                    </span>
                 </td>
                 <td>
-                    <div class="input-group input-group-sm">
-                        <span class="input-group-text"><i class="bi bi-lock"></i></span>
-                        <input type="text" class="form-control font-monospace" 
+                    <div class="input-group input-group-sm w-75">
+                        <span class="input-group-text bg-white"><i class="bi bi-lock text-muted"></i></span>
+                        <input type="text" class="form-control font-monospace fw-bold text-secondary" 
                                id="input-kod-${id}" 
                                value="${kodSemasa}" 
-                               placeholder="Cth: ${id.toUpperCase()}123">
+                               placeholder="Cth: ${id.toUpperCase()}2024">
                     </div>
                 </td>
                 <td class="text-center">
-                    <button class="btn btn-sm btn-dark px-3" onclick="simpanKodRumah('${id}')">
+                    <button class="btn btn-sm btn-dark px-3 rounded-pill" onclick="simpanKodRumah('${id}')">
                         <i class="bi bi-save me-1"></i> Simpan
                     </button>
                 </td>
-            </tr>`;
+            </tr>
+        `;
     }
 
-    html += `</tbody></table></div></div>
-             <div class="card-footer bg-white text-muted small">
-                * Kod ini akan digunakan oleh Guru Rumah Sukan untuk Log Masuk.
-             </div>
-        </div>`;
+    html += `
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="card-footer bg-light text-muted small p-3">
+                <i class="bi bi-info-circle me-1"></i> Kod akses ini akan digunakan oleh Guru Rumah Sukan semasa proses Log Masuk untuk mendaftarkan atlet mereka.
+            </div>
+        </div>
+    `;
     container.innerHTML = html;
 }
 
-// Fungsi Simpan Kod ke Firebase (Global Window Function)
+// Global Window Function untuk butang "Simpan Kod" di baris jadual
 window.simpanKodRumah = async (idRumah) => {
-    const kodBaru = document.getElementById(`input-kod-${idRumah}`).value.trim();
+    const inputEl = document.getElementById(`input-kod-${idRumah}`);
+    const kodBaru = inputEl.value.trim();
     
-    if (!kodBaru) return alert("Sila masukkan kod akses!");
+    if (!kodBaru) {
+        inputEl.classList.add('is-invalid');
+        return alert("Sila masukkan kod akses yang sah!");
+    } else {
+        inputEl.classList.remove('is-invalid');
+    }
 
-    const btn = event.currentTarget; // Butang yang ditekan
+    const btn = event.currentTarget; 
     const originalText = btn.innerHTML;
+    
+    // UI Button Loading
     btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
     btn.disabled = true;
 
     try {
         const docRef = doc(db, "kejohanan", tahunAktif, "rumah", idRumah);
         
-        // Guna setDoc dengan merge:true. 
-        // Ini penting: Jika dokumen rumah belum wujud, ia akan dicipta.
-        // Jika sudah wujud, ia hanya kemaskini field 'kod' tanpa buang data lain (contoh: pungutan pingat).
+        // Simpan ke Firestore menggunakan setDoc dgn merge:true supaya data pingat (jika ada) tidak hilang.
         await setDoc(docRef, { 
             kod: kodBaru,
             nama: idRumah.toUpperCase() 
         }, { merge: true });
 
-        alert(`Kod untuk ${idRumah.toUpperCase()} berjaya disimpan!`);
+        // Tunjukkan feedback visual sukses sementara
+        btn.classList.remove('btn-dark');
+        btn.classList.add('btn-success');
+        btn.innerHTML = '<i class="bi bi-check-lg"></i> Berjaya';
+        
+        setTimeout(() => {
+            btn.classList.remove('btn-success');
+            btn.classList.add('btn-dark');
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }, 2000);
+
     } catch (error) {
-        console.error(error);
-        alert("Ralat menyimpan kod: " + error.message);
-    } finally {
+        console.error("Ralat menyimpan kod rumah:", error);
+        alert("Ralat pelayan. Gagal menyimpan kod: " + error.message);
         btn.innerHTML = originalText;
         btn.disabled = false;
     }
 };
 
-// --- 4. SENARAI ACARA ---
+// ==============================================================================
+// 8. SENARAI ACARA (MOD URUS vs KEPUTUSAN)
+// ==============================================================================
 async function renderSenaraiAcara(mode) {
-    contentArea.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary"></div><p>Memuatkan senarai...</p></div>';
+    contentArea.innerHTML = `
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;"></div>
+            <p class="mt-3 text-muted">Mencari senarai acara dari pangkalan data...</p>
+        </div>
+    `;
     
     let acara = await getEventsReadyForResults(tahunAktif);
 
+    // Susun mengikut Nama kemudian Kategori untuk kekemasan
     acara.sort((a, b) => {
         const namaA = a.nama.toUpperCase();
         const namaB = b.nama.toUpperCase();
@@ -263,85 +648,135 @@ async function renderSenaraiAcara(mode) {
         return katA < katB ? -1 : 1;
     });
 
-    let title = mode === 'urus' ? 'Urus Acara & Saringan' : 'Input Keputusan Acara';
-    let btnText = mode === 'urus' ? 'Urus & Cetak' : 'Input Keputusan';
+    let title = mode === 'urus' ? 'Urus Acara & Cetak Borang' : 'Input Keputusan Kejohanan';
+    let btnText = mode === 'urus' ? 'Pilih Acara' : 'Masukkan Keputusan';
+    let btnIcon = mode === 'urus' ? 'bi-printer' : 'bi-pencil-square';
+    let btnClass = mode === 'urus' ? 'btn-outline-primary' : 'btn-primary shadow-sm';
 
     let html = `
-        <div class="row align-items-center mb-4">
+        <div class="row align-items-center mb-4 pb-2 border-bottom">
             <div class="col-md-6">
-                <h4 class="fw-bold mb-0">${title}</h4>
-                <span class="badge bg-primary">${acara.length} Acara (${tahunAktif})</span>
+                <h4 class="fw-bold text-dark mb-0"><i class="bi ${btnIcon} me-2"></i>${title}</h4>
+                <div class="mt-1">
+                    <span class="badge bg-secondary me-2">Tahun: ${tahunAktif}</span>
+                    <span class="badge bg-primary rounded-pill">${acara.length} Acara Direkodkan</span>
+                </div>
             </div>
             <div class="col-md-6 mt-3 mt-md-0 d-print-none">
-                <div class="input-group shadow-sm">
-                    <span class="input-group-text bg-white border-end-0"><i class="bi bi-search"></i></span>
-                    <input type="text" id="search-acara" class="form-control border-start-0" placeholder="Cari nama acara atau kategori...">
+                <div class="input-group">
+                    <span class="input-group-text bg-white border-end-0 text-muted"><i class="bi bi-search"></i></span>
+                    <input type="text" id="search-acara" class="form-control border-start-0" placeholder="Taip untuk menapis nama acara / kategori...">
                 </div>
             </div>
         </div>
-        <div class="row" id="container-acara">`;
+        <div class="row" id="container-acara">
+    `;
     
-    acara.forEach(a => {
+    if(acara.length === 0) {
         html += `
-            <div class="col-md-4 mb-3 acara-card-container">
-                <div class="card shadow-sm border-0 h-100">
-                    <div class="card-body d-flex flex-column justify-content-between">
-                        <div>
-                            <h6 class="fw-bold text-dark mb-1">${a.nama}</h6>
-                            <p class="badge bg-light text-primary border border-primary mb-3">${a.kategori}</p>
+            <div class="col-12 text-center py-5">
+                <i class="bi bi-folder-x text-muted" style="font-size: 4rem;"></i>
+                <h5 class="text-muted mt-3">Tiada Acara Dijumpai</h5>
+                <p class="small">Sila pergi ke <b>Setup Tahun Baru</b> untuk menjana struktur database.</p>
+            </div>
+        `;
+    } else {
+        acara.forEach(a => {
+            html += `
+                <div class="col-md-4 col-sm-6 mb-3 acara-card-container">
+                    <div class="card shadow-sm border-0 h-100 hover-card">
+                        <div class="card-body d-flex flex-column justify-content-between p-3">
+                            <div class="mb-3">
+                                <h6 class="fw-bold text-dark mb-1 text-truncate" title="${a.nama}">${a.nama}</h6>
+                                <span class="badge bg-light text-dark border border-secondary px-2 py-1">${a.kategori}</span>
+                                <span class="badge bg-light text-muted border px-2 py-1"><i class="bi bi-tag-fill me-1"></i>${a.jenis || 'Balapan'}</span>
+                            </div>
+                            <button class="btn btn-sm ${btnClass} w-100 fw-bold rounded-pill" 
+                                    onclick="pilihAcara('${a.id}', '${a.nama} ${a.kategori}', '${mode}')">
+                                <i class="bi ${btnIcon} me-1"></i> ${btnText}
+                            </button>
                         </div>
-                        <button class="btn btn-sm ${mode === 'urus' ? 'btn-outline-primary' : 'btn-primary'} w-100" 
-                                onclick="pilihAcara('${a.id}', '${a.nama} ${a.kategori}', '${mode}')">
-                            <i class="bi ${mode === 'urus' ? 'bi-printer' : 'bi-pencil-square'} me-1"></i> ${btnText}
-                        </button>
                     </div>
                 </div>
-            </div>`;
-    });
+            `;
+        });
+    }
     
     contentArea.innerHTML = html + `</div>`;
 
+    // Carian Client-side
     document.getElementById('search-acara')?.addEventListener('input', (e) => {
         const keyword = e.target.value.toLowerCase();
         document.querySelectorAll('.acara-card-container').forEach(card => {
-            card.style.display = card.innerText.toLowerCase().includes(keyword) ? "block" : "none";
+            const cardText = card.innerText.toLowerCase();
+            card.style.display = cardText.includes(keyword) ? "block" : "none";
         });
     });
 }
 
-// --- 5. PILIH SARINGAN/HEAT ---
+// ==============================================================================
+// 9. PEMILIHAN SARINGAN (HEAT) & CETAKAN
+// ==============================================================================
 window.pilihAcara = async (eventId, label, mode) => {
+    contentArea.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-info"></div><p>Memuatkan Saringan...</p></div>';
+    
     const heats = await getHeatsData(tahunAktif, eventId);
+    
     let html = `
-        <div class="d-flex align-items-center mb-3 d-print-none">
-            <button class="btn btn-sm btn-outline-secondary me-3" onclick="renderSenaraiAcara('${mode}')">
-                <i class="bi bi-arrow-left"></i> Kembali
+        <div class="d-flex align-items-center mb-3 pb-2 border-bottom d-print-none">
+            <button class="btn btn-sm btn-light border me-3 shadow-sm" onclick="renderSenaraiAcara('${mode}')">
+                <i class="bi bi-arrow-left"></i> Kembali Ke Senarai Acara
             </button>
-            <h5 class="mb-0 fw-bold">${label} (${tahunAktif})</h5>
+            <h5 class="mb-0 fw-bold text-primary">${label} <span class="text-muted fw-normal ms-2">(${tahunAktif})</span></h5>
         </div>
-        <hr class="d-print-none">
-        <div class="list-group">`;
+        
+        <div class="row mb-3 d-print-none">
+            <div class="col-12">
+                <div class="alert alert-secondary py-2 small">
+                    <i class="bi bi-info-circle-fill me-2"></i>Sila pilih saringan di bawah untuk meneruskan. Saringan yang selesai akan ditanda hijau.
+                </div>
+            </div>
+        </div>
+
+        <div class="list-group shadow-sm border-0">
+    `;
     
     if (heats.length === 0) {
-        html += `<div class="alert alert-info">Tiada saringan dijumpai.</div>`;
+        html += `
+            <div class="list-group-item text-center py-4 bg-light">
+                <p class="text-muted mb-0">Tiada saringan dicipta untuk acara ini.</p>
+            </div>
+        `;
     } else {
+        // Susun saringan ikut nombor
+        heats.sort((a,b) => parseInt(a.noSaringan) - parseInt(b.noSaringan));
+
         heats.forEach(h => {
+            const statusColor = h.status === 'selesai' ? 'success' : 'warning';
+            const statusText = h.status === 'selesai' ? 'Selesai' : 'Sedang Berlangsung';
+            
             html += `
-                <button class="list-group-item list-group-item-action d-flex justify-content-between align-items-center" 
+                <button class="list-group-item list-group-item-action d-flex justify-content-between align-items-center p-3 border-start border-4 border-${statusColor}" 
                         onclick="pilihSaringan('${eventId}', '${h.id}', '${label}', '${mode}')">
-                    <span><i class="bi bi-flag-fill me-2 text-danger"></i>Saringan ${h.noSaringan}</span>
-                    <span class="badge rounded-pill ${h.status === 'selesai' ? 'bg-success' : 'bg-warning text-dark'} d-print-none">
-                        ${h.status === 'selesai' ? 'Selesai' : 'Belum Selesai'}
+                    <div>
+                        <span class="fw-bold fs-5"><i class="bi bi-flag-fill me-2 text-dark"></i>Saringan ${h.noSaringan}</span>
+                    </div>
+                    <span class="badge rounded-pill bg-${statusColor} ${statusColor==='warning'?'text-dark':''} p-2 d-print-none shadow-sm">
+                        ${statusText} <i class="bi bi-chevron-right ms-1"></i>
                     </span>
-                </button>`;
+                </button>
+            `;
         });
     }
     contentArea.innerHTML = html + `</div>`;
 };
 
-// --- 6. BORANG DINAMIK ---
+// ==============================================================================
+// 10. BORANG DINAMIK (BALAPAN, PADANG, LOMPAT TINGGI)
+// ==============================================================================
 window.pilihSaringan = async (eventId, heatId, label, mode) => {
-    contentArea.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary"></div></div>';
+    contentArea.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary" style="width:3rem;height:3rem;"></div><p class="mt-2 text-muted">Menjana borang...</p></div>';
+    
     const heats = await getHeatsData(tahunAktif, eventId);
     const h = heats.find(item => item.id === heatId);
     const eventDetail = await getEventDetail(tahunAktif, eventId);
@@ -350,34 +785,51 @@ window.pilihSaringan = async (eventId, heatId, label, mode) => {
     const isReadOnly = (mode === 'urus');
 
     let html = `
-        <div class="d-flex justify-content-between align-items-center mb-3">
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-3">
             <div>
-                <h5 class="fw-bold text-primary mb-0">${label} - Saringan ${h.noSaringan}</h5>
-                <div class="d-flex gap-3 d-print-none">
-                    <button class="btn btn-link btn-sm p-0 text-decoration-none" 
+                <h4 class="fw-bold text-dark mb-0 text-uppercase">${label} - Saringan ${h.noSaringan}</h4>
+                <div class="d-flex gap-3 d-print-none mt-2">
+                    <button class="btn btn-sm btn-outline-info rounded-pill" 
                             onclick="jalankanSync('${eventId}', '${heatId}', '${label}', '${mode}')">
-                        <i class="bi bi-arrow-repeat me-1"></i>Kemaskini No. Bip Peserta
+                        <i class="bi bi-arrow-repeat me-1"></i>Sync No Bip Profil
                     </button>
                     ${isReadOnly ? `
-                    <button class="btn btn-link btn-sm p-0 text-decoration-none text-warning fw-bold" 
+                    <button class="btn btn-sm btn-warning fw-bold rounded-pill text-dark" 
                             onclick="window.agihanAuto('${eventId}', '${heatId}', '${label}', '${mode}')">
-                        <i class="bi bi-magic me-1"></i>Agihan Auto Peserta
+                        <i class="bi bi-magic me-1"></i>Tarik Data Pendaftaran (Auto)
                     </button>` : ''}
                 </div>
             </div>
-            <div class="d-print-none">
-                ${isReadOnly ? '<button class="btn btn-sm btn-dark me-2" onclick="window.print()"><i class="bi bi-printer me-1"></i> Cetak</button>' : ''}
-                <button class="btn btn-sm btn-secondary" onclick="pilihAcara('${eventId}', '${label}', '${mode}')">Kembali</button>
+            <div class="d-print-none mt-3 mt-md-0 d-flex gap-2">
+                ${isReadOnly ? `
+                <button class="btn btn-dark shadow-sm px-4" onclick="window.print()">
+                    <i class="bi bi-printer me-2"></i> Cetak Borang Hakim
+                </button>` : ''}
+                <button class="btn btn-light border shadow-sm" onclick="pilihAcara('${eventId}', '${label}', '${mode}')">
+                    Kembali
+                </button>
             </div>
         </div>
-        <div class="card bg-white mb-3 border-0 shadow-sm">
-            <div class="card-body py-2 row text-center small">
-                <div class="col-4 border-end"><strong>Rekod:</strong><br><span class="text-danger fw-bold">${record?.rekod || '-'}</span></div>
-                <div class="col-4 border-end"><strong>Tahun:</strong><br>${record?.tahun || '-'}</div>
-                <div class="col-4"><strong>Nama:</strong><br>${record?.nama || '-'}</div>
+        
+        <div class="card bg-light mb-4 border border-2 border-dark" style="border-radius: 10px;">
+            <div class="card-body py-2 row text-center small align-items-center">
+                <div class="col-4 border-end border-dark">
+                    <span class="text-muted d-block text-uppercase" style="font-size:0.7rem;">Rekod Kejohanan</span>
+                    <span class="text-danger fw-bold fs-5">${record?.rekod || 'Tiada Rekod'}</span>
+                </div>
+                <div class="col-4 border-end border-dark">
+                    <span class="text-muted d-block text-uppercase" style="font-size:0.7rem;">Tahun Pemegang</span>
+                    <span class="fw-bold text-dark fs-6">${record?.tahun || '-'}</span>
+                </div>
+                <div class="col-4">
+                    <span class="text-muted d-block text-uppercase" style="font-size:0.7rem;">Pemegang Rekod</span>
+                    <span class="fw-bold text-dark text-truncate d-block">${record?.nama || '-'}</span>
+                </div>
             </div>
-        </div>`;
+        </div>
+    `;
 
+    // Pilihan Render mengikut Jenis Acara (Logik dari array CONSTANT)
     if (ACARA_KHAS.includes(eventDetail.nama)) {
         html += renderBorangLompatTinggi(h, isReadOnly);
     } else if (ACARA_PADANG.includes(eventDetail.nama)) {
@@ -386,180 +838,382 @@ window.pilihSaringan = async (eventId, heatId, label, mode) => {
         html += renderBorangBalapan(h, isReadOnly);
     }
     
+    // Tanda tangan untuk Cetakan (Hakim)
+    html += `
+        <div class="row mt-5 d-none d-print-flex">
+            <div class="col-6 text-center">
+                <p>Disahkan Oleh Hakim:</p>
+                <div style="border-bottom: 1px solid black; height: 50px; width: 80%; margin: 0 auto;"></div>
+                <p class="mt-2">( Nama: ..................................................... )</p>
+            </div>
+            <div class="col-6 text-center">
+                <p>Disahkan Oleh Ketua Hakim:</p>
+                <div style="border-bottom: 1px solid black; height: 50px; width: 80%; margin: 0 auto;"></div>
+                <p class="mt-2">( Nama: ..................................................... )</p>
+            </div>
+        </div>
+    `;
+
     contentArea.innerHTML = html;
+    
+    // Jika dalam mode Input Keputusan, lekatkan listener pada elemen input
     if (!isReadOnly) attachEvents(h, eventId, heatId, label, eventDetail.nama);
 };
 
-// --- 7. LOGIK RENDER ---
+// ------------------------------------------------------------------------------
+// RENDER HTML: ACARA BALAPAN
+// ------------------------------------------------------------------------------
 function renderBorangBalapan(h, isReadOnly) {
-    let t = `<div class="table-responsive"><table class="table table-bordered bg-white align-middle">
-        <thead class="table-dark"><tr>
-            <th width="60">Lorong</th>
-            <th width="100">No. Bip</th>
-            <th>Nama Atlet / Rumah</th>
-            <th width="150">Masa (s)</th>
-        </tr></thead><tbody>`;
+    let t = `
+        <div class="table-responsive bg-white shadow-sm p-3 rounded" style="border:1px solid #ddd;">
+            <table class="table table-bordered table-hover align-middle mb-0" id="table-balapan">
+                <thead class="table-dark text-center">
+                    <tr>
+                        <th width="80" class="py-3">Lorong</th>
+                        <th width="120" class="py-3">No. Bip</th>
+                        <th class="text-start py-3">Nama Atlet / Maklumat Rumah</th>
+                        <th width="200" class="py-3">Keputusan Masa (s)</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
         
     if (!h.peserta || h.peserta.length === 0) {
-        t += `<tr><td colspan="4" class="text-center py-4 text-muted">Tiada peserta. Klik 'Agihan Auto' untuk menarik data dari pendaftaran guru.</td></tr>`;
+        t += `<tr><td colspan="4" class="text-center py-5 text-danger fw-bold"><i class="bi bi-exclamation-triangle me-2"></i>Tiada peserta berdaftar dalam saringan ini. Sila tarik data.</td></tr>`;
     } else {
         h.peserta.forEach((p, idx) => {
             const bipDisplay = p.noBip || p.noBib || '-';
-            t += `<tr>
-                <td class="text-center fw-bold">${p.lorong || (idx + 1)}</td>
-                <td class="text-center">${bipDisplay}</td>
-                <td><div class="fw-bold">${p.nama}</div><div class="small text-muted text-uppercase">${p.idRumah || p.rumah || ''}</div></td>
-                <td>${isReadOnly ? '<div style="border-bottom: 1px dotted #000; height: 25px; margin-top:10px;"></div>' : 
-                    `<input type="text" class="form-control text-center res-input" data-idx="${idx}" value="${p.pencapaian || ''}" placeholder="00.00">`}</td>
-            </tr>`;
+            t += `
+                <tr>
+                    <td class="text-center fs-5 fw-bold bg-light">${p.lorong || (idx + 1)}</td>
+                    <td class="text-center fs-5 text-secondary fw-bold border-end border-2">${bipDisplay}</td>
+                    <td>
+                        <div class="fw-bold text-dark fs-6">${p.nama.toUpperCase()}</div>
+                        <div class="small text-muted text-uppercase d-flex align-items-center mt-1">
+                            <i class="bi bi-house-door-fill me-1"></i> RUMAH ${p.idRumah || p.rumah || 'TIADA'}
+                        </div>
+                    </td>
+                    <td class="p-3">
+                        ${isReadOnly ? 
+                            '<div style="border-bottom: 2px dashed #999; height: 35px; margin-top:5px; width:100%;"></div>' 
+                            : 
+                            `<div class="input-group">
+                                <input type="number" step="0.01" class="form-control form-control-lg text-center res-input text-primary fw-bold" 
+                                       data-idx="${idx}" 
+                                       value="${p.pencapaian || ''}" 
+                                       placeholder="00.00" 
+                                       style="background-color: #f8f9fa;">
+                                <span class="input-group-text bg-white text-muted">s</span>
+                            </div>`
+                        }
+                    </td>
+                </tr>
+            `;
         });
     }
-    return t + `</tbody></table></div>` + (isReadOnly ? '' : `<button class="btn btn-primary w-100 py-2 fw-bold mt-3" id="btn-save-results">SIMPAN KEPUTUSAN</button>`);
+    return t + `</tbody></table></div>` + (isReadOnly ? '' : `
+        <div class="d-grid mt-4">
+            <button class="btn btn-primary btn-lg py-3 fw-bold shadow-sm rounded-pill" id="btn-save-results">
+                <i class="bi bi-cloud-arrow-up-fill me-2"></i>SIMPAN KEPUTUSAN RASMI
+            </button>
+        </div>
+    `);
 }
 
+// ------------------------------------------------------------------------------
+// RENDER HTML: ACARA PADANG (Lompat Jauh, Lontar Peluru, dll)
+// ------------------------------------------------------------------------------
 function renderBorangPadang(h, isReadOnly) {
-    let t = `<div class="table-responsive"><table class="table table-bordered bg-white text-center align-middle">
-        <thead class="table-dark"><tr>
-            <th width="100">No. Bip</th>
-            <th class="text-start">Atlet / Rumah</th>
-            <th width="80">T1</th><th width="80">T2</th><th width="80">T3</th>
-            <th width="100">Terbaik</th>
-        </tr></thead><tbody>`;
+    let t = `
+        <div class="table-responsive bg-white shadow-sm p-3 rounded" style="border:1px solid #ddd;">
+            <table class="table table-bordered table-hover text-center align-middle mb-0">
+                <thead class="table-dark">
+                    <tr>
+                        <th width="100" class="py-3">No. Bip</th>
+                        <th class="text-start py-3">Atlet / Rumah</th>
+                        <th width="100" class="py-3 bg-secondary">T 1 (m)</th>
+                        <th width="100" class="py-3 bg-secondary">T 2 (m)</th>
+                        <th width="100" class="py-3 bg-secondary">T 3 (m)</th>
+                        <th width="150" class="py-3 bg-primary">Terbaik (m)</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
     
     if (!h.peserta || h.peserta.length === 0) {
-        t += `<tr><td colspan="6" class="text-center py-4 text-muted">Tiada peserta. Klik 'Agihan Auto'.</td></tr>`;
+        t += `<tr><td colspan="6" class="text-center py-5 text-danger fw-bold">Tiada peserta. Klik butang 'Tarik Data'.</td></tr>`;
     } else {
         h.peserta.forEach((p, idx) => {
             const bipDisplay = p.noBip || p.noBib || '-';
             const tr = p.percubaan || ['', '', ''];
-            t += `<tr data-idx="${idx}">
-                <td class="text-center">${bipDisplay}</td>
-                <td class="text-start"><div class="fw-bold">${p.nama}</div><div class="small text-muted">${p.idRumah || p.rumah || ''}</div></td>
-                ${[0,1,2].map(i => `<td>${isReadOnly ? '<div style="height:25px;"></div>' : `<input type="number" step="0.01" class="form-control form-control-sm trial-input" data-trial="${i}" value="${tr[i]}">`}</td>`).join('')}
-                <td class="fw-bold text-primary">${p.pencapaian || '0.00'}</td>
-            </tr>`;
+            
+            t += `
+                <tr data-idx="${idx}">
+                    <td class="text-center fw-bold fs-5 text-secondary border-end border-2">${bipDisplay}</td>
+                    <td class="text-start">
+                        <div class="fw-bold text-dark fs-6">${p.nama.toUpperCase()}</div>
+                        <div class="small text-muted text-uppercase mt-1">RUMAH ${p.idRumah || p.rumah || ''}</div>
+                    </td>
+                    ${[0,1,2].map(i => `
+                        <td class="bg-light">
+                            ${isReadOnly ? 
+                                '<div style="border-bottom: 2px dashed #999; height:35px;"></div>' 
+                                : 
+                                `<input type="number" step="0.01" class="form-control text-center trial-input" data-trial="${i}" value="${tr[i] || ''}">`
+                            }
+                        </td>
+                    `).join('')}
+                    <td class="fw-bold fs-4 text-primary bg-primary bg-opacity-10 align-middle">
+                        ${p.pencapaian ? parseFloat(p.pencapaian).toFixed(2) : '-.--'}
+                    </td>
+                </tr>
+            `;
         });
     }
-    return t + `</tbody></table></div>` + (isReadOnly ? '' : `<button class="btn btn-primary w-100 py-2 fw-bold mt-3" id="btn-save-results">SIMPAN KEPUTUSAN</button>`);
+    return t + `</tbody></table></div>` + (isReadOnly ? '' : `
+        <div class="d-grid mt-4">
+            <button class="btn btn-primary btn-lg py-3 fw-bold shadow-sm rounded-pill" id="btn-save-results">
+                <i class="bi bi-save2-fill me-2"></i>SIMPAN KEPUTUSAN PADANG
+            </button>
+        </div>
+    `);
 }
 
+// ------------------------------------------------------------------------------
+// RENDER HTML: LOMPAT TINGGI (Dinamik Columns)
+// ------------------------------------------------------------------------------
 function renderBorangLompatTinggi(h, isReadOnly) {
     let allHeights = new Set();
-    h.peserta.forEach(p => p.rekodLompatan && Object.keys(p.rekodLompatan).forEach(ht => allHeights.add(ht)));
+    
+    // Kumpulkan semua aras ketinggian yang pernah direkodkan untuk peserta ini
+    h.peserta.forEach(p => {
+        if(p.rekodLompatan) Object.keys(p.rekodLompatan).forEach(ht => allHeights.add(ht));
+    });
+    
+    // Susun secara menaik
     let sorted = Array.from(allHeights).sort((a,b) => parseFloat(a) - parseFloat(b));
 
-    let t = `${isReadOnly ? '' : `<div class="mb-2 text-end d-print-none"><button class="btn btn-sm btn-dark" id="btn-add-height"><i class="bi bi-plus-circle me-1"></i>Tambah Aras</button></div>`}
-        <div class="table-responsive"><table class="table table-bordered bg-white text-center align-middle" id="high-jump-table">
-        <thead class="table-dark"><tr>
-            <th width="100">No. Bip</th>
-            <th class="text-start">Atlet / Rumah</th>
-            ${sorted.map(ht => `<th>${ht}m</th>`).join('')}
-            <th>Terbaik</th>
-        </tr></thead><tbody>`;
+    let t = `
+        ${isReadOnly ? '' : `
+        <div class="mb-3 d-flex justify-content-end d-print-none">
+            <button class="btn btn-outline-dark fw-bold rounded-pill shadow-sm" id="btn-add-height">
+                <i class="bi bi-plus-circle-fill me-1 text-success"></i> Tambah Aras Lompatan Baru
+            </button>
+        </div>
+        `}
+        <div class="table-responsive bg-white shadow-sm p-3 rounded" style="border:1px solid #ddd;">
+            <table class="table table-bordered text-center align-middle mb-0" id="high-jump-table">
+                <thead class="table-dark">
+                    <tr>
+                        <th width="100" class="py-3">No. Bip</th>
+                        <th class="text-start py-3" style="min-width: 250px;">Atlet / Rumah</th>
+                        ${sorted.map(ht => `<th class="py-3 bg-secondary" style="min-width: 60px;">${parseFloat(ht).toFixed(2)}m</th>`).join('')}
+                        <th width="120" class="py-3 bg-primary">Terbaik</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
     
     if (!h.peserta || h.peserta.length === 0) {
-        t += `<tr><td colspan="${sorted.length + 3}" class="text-center py-4 text-muted">Tiada peserta. Klik 'Agihan Auto'.</td></tr>`;
+        t += `<tr><td colspan="${sorted.length + 3}" class="text-center py-5 text-danger fw-bold">Tiada peserta. Klik 'Tarik Data'.</td></tr>`;
     } else {
         h.peserta.forEach((p, idx) => {
             const bipDisplay = p.noBip || p.noBib || '-';
-            t += `<tr data-idx="${idx}">
-                <td class="text-center">${bipDisplay}</td>
-                <td class="text-start"><div class="fw-bold">${p.nama}</div><div class="small text-muted">${p.idRumah || p.rumah || ''}</div></td>
-                ${sorted.map(ht => `<td>${isReadOnly ? '' : `<input type="text" class="form-control form-control-sm hj-input" data-ht="${ht}" value="${p.rekodLompatan?.[ht]?.join('') || ''}">`}</td>`).join('')}
-                <td class="fw-bold text-primary">${p.pencapaian || '0.00'}</td></tr>`;
+            t += `
+                <tr data-idx="${idx}">
+                    <td class="fw-bold fs-5 text-secondary border-end border-2">${bipDisplay}</td>
+                    <td class="text-start border-end border-2">
+                        <div class="fw-bold text-dark fs-6 text-truncate" style="max-width: 200px;" title="${p.nama}">${p.nama.toUpperCase()}</div>
+                        <div class="small text-muted text-uppercase mt-1">RUMAH ${p.idRumah || p.rumah || ''}</div>
+                    </td>
+                    ${sorted.map(ht => `
+                        <td class="bg-light p-1">
+                            ${isReadOnly ? 
+                                `<div class="fw-bold">${p.rekodLompatan?.[ht]?.join(' ') || ''}</div>` 
+                                : 
+                                `<input type="text" class="form-control form-control-sm hj-input text-center text-uppercase fw-bold text-dark" 
+                                        style="letter-spacing: 2px;"
+                                        data-ht="${ht}" 
+                                        value="${p.rekodLompatan?.[ht]?.join('') || ''}"
+                                        maxlength="3"
+                                        placeholder="OX-">`
+                            }
+                        </td>
+                    `).join('')}
+                    <td class="fw-bold fs-4 text-primary bg-primary bg-opacity-10">
+                        ${p.pencapaian ? parseFloat(p.pencapaian).toFixed(2) : '-.--'}
+                    </td>
+                </tr>
+            `;
         });
     }
-    return t + `</tbody></table></div>` + (isReadOnly ? '' : `<button class="btn btn-primary w-100 mt-3 py-2 fw-bold" id="btn-save-results">SIMPAN KEPUTUSAN</button>`);
+    
+    return t + `</tbody></table></div>` + (isReadOnly ? '' : `
+        <div class="alert alert-info mt-3 small d-print-none border-0 shadow-sm">
+            <i class="bi bi-info-circle-fill me-2"></i> <strong>PANDUAN INPUT:</strong> Gunakan <strong>O</strong> (Lepas), <strong>X</strong> (Batal), dan <strong>-</strong> (Pass). Maksimum 3 percubaan.
+        </div>
+        <div class="d-grid mt-3">
+            <button class="btn btn-primary btn-lg py-3 fw-bold shadow-sm rounded-pill" id="btn-save-results">
+                <i class="bi bi-trophy-fill me-2"></i>SIMPAN KEPUTUSAN LOMPAT TINGGI
+            </button>
+        </div>
+    `);
 }
 
-// --- 8. LOGIK SIMPAN ---
+// ==============================================================================
+// 11. LOGIK SIMPAN KEPUTUSAN BERGANTUNG PADA JENIS ACARA
+// ==============================================================================
 function attachEvents(h, eventId, heatId, label, jenisAcara) {
+    
+    // BUTANG: Simpan Keputusan
     document.getElementById('btn-save-results').onclick = async () => {
+        const btn = document.getElementById('btn-save-results');
+        const textAsal = btn.innerHTML;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Menyimpan Data...';
+        btn.disabled = true;
+
         const updated = [...h.peserta];
-        if (ACARA_KHAS.includes(jenisAcara)) {
-            document.querySelectorAll('#high-jump-table tbody tr').forEach(row => {
-                const idx = row.dataset.idx;
-                let jumps = {};
-                row.querySelectorAll('.hj-input').forEach(inp => {
-                    const val = inp.value.toUpperCase().split('').filter(v => ['O','X','-'].includes(v));
-                    if (val.length > 0) jumps[inp.dataset.ht] = val;
+
+        try {
+            if (ACARA_KHAS.includes(jenisAcara)) {
+                // Logik proses Lompat Tinggi
+                document.querySelectorAll('#high-jump-table tbody tr').forEach(row => {
+                    const idx = row.dataset.idx;
+                    let jumps = {};
+                    row.querySelectorAll('.hj-input').forEach(inp => {
+                        // Tapis input, hanya benarkan O, X, -
+                        const val = inp.value.toUpperCase().split('').filter(v => ['O','X','-'].includes(v));
+                        if (val.length > 0) jumps[inp.dataset.ht] = val;
+                    });
+                    updated[idx].rekodLompatan = jumps;
+                    updated[idx].pencapaian = highJumpLogic.getBestHeight(jumps); // Guna modul external
                 });
-                updated[idx].rekodLompatan = jumps;
-                updated[idx].pencapaian = highJumpLogic.getBestHeight(jumps);
-            });
-        } else if (ACARA_PADANG.includes(jenisAcara)) {
-            document.querySelectorAll('tbody tr').forEach(row => {
-                const idx = row.dataset.idx;
-                const trials = Array.from(row.querySelectorAll('.trial-input')).map(i => parseFloat(i.value) || 0);
-                updated[idx].percubaan = trials;
-                updated[idx].pencapaian = Math.max(...trials).toFixed(2);
-            });
-        } else {
-            document.querySelectorAll('.res-input').forEach(inp => { updated[inp.dataset.idx].pencapaian = inp.value; });
-        }
-        
-        const res = await saveHeatResults(tahunAktif, eventId, heatId, updated);
-        if(res.success) {
-            alert("Keputusan berjaya disimpan!");
-            pilihSaringan(eventId, heatId, label, 'keputusan');
-        } else {
-            alert("Ralat: " + res.message);
+            } 
+            else if (ACARA_PADANG.includes(jenisAcara)) {
+                // Logik proses Acara Padang
+                document.querySelectorAll('tbody tr').forEach(row => {
+                    const idx = row.dataset.idx;
+                    const trials = Array.from(row.querySelectorAll('.trial-input')).map(i => parseFloat(i.value) || 0);
+                    updated[idx].percubaan = trials;
+                    
+                    // Cari nilai maksimum dari 3 percubaan
+                    const highest = Math.max(...trials);
+                    updated[idx].pencapaian = highest > 0 ? highest.toFixed(2) : "";
+                });
+            } 
+            else {
+                // Logik proses Acara Balapan (Masa)
+                document.querySelectorAll('.res-input').forEach(inp => { 
+                    updated[inp.dataset.idx].pencapaian = inp.value; 
+                });
+            }
+            
+            // Hantar ke Firestore
+            const res = await saveHeatResults(tahunAktif, eventId, heatId, updated);
+            if(res.success) {
+                // Beri respon visual
+                btn.classList.replace('btn-primary', 'btn-success');
+                btn.innerHTML = '<i class="bi bi-check-circle-fill me-2"></i>Tersimpan!';
+                setTimeout(() => {
+                    pilihSaringan(eventId, heatId, label, 'keputusan'); // Refresh view
+                }, 1000);
+            } else {
+                throw new Error(res.message);
+            }
+
+        } catch (error) {
+            console.error(error);
+            alert("Ralat semasa menyimpan: " + error.message);
+            btn.innerHTML = textAsal;
+            btn.disabled = false;
         }
     };
 
+    // BUTANG: Tambah Aras Lompat Tinggi (Dinamik HTML Table)
     document.getElementById('btn-add-height')?.addEventListener('click', () => {
-        const val = prompt("Masukkan Ketinggian Baru (m):", "1.10");
-        if (!val || isNaN(val)) return;
+        const val = prompt("Sila masukkan ketinggian palang baru (m):\nContoh: 1.15", "1.10");
+        if (!val || isNaN(val)) {
+            if(val) alert("Nilai tidak sah. Mesti nombor.");
+            return;
+        }
+        
+        const floatVal = parseFloat(val).toFixed(2);
+        
+        // Tambah column Header
         const head = document.querySelector('#high-jump-table thead tr');
-        const th = document.createElement('th'); th.innerText = val + "m";
+        const th = document.createElement('th'); 
+        th.className = "py-3 bg-secondary text-white";
+        th.innerText = floatVal + "m";
         head.insertBefore(th, head.lastElementChild);
+        
+        // Tambah column Data (Input) di setiap baris (Peserta)
         document.querySelectorAll('#high-jump-table tbody tr').forEach(row => {
             const td = document.createElement('td');
-            td.innerHTML = `<input type="text" class="form-control form-control-sm hj-input" data-ht="${val}" value="">`;
+            td.className = "bg-light p-1";
+            td.innerHTML = `
+                <input type="text" class="form-control form-control-sm hj-input text-center text-uppercase fw-bold text-dark" 
+                       style="letter-spacing: 2px;"
+                       data-ht="${floatVal}" 
+                       value="" 
+                       maxlength="3"
+                       placeholder="OX-">
+            `;
             row.insertBefore(td, row.lastElementChild);
         });
     });
 }
 
-// --- 9. LOGIK SYNC & AGIHAN AUTO ---
+// ==============================================================================
+// 12. FUNGSI SYNC NO BIP & AGIHAN AUTO (DARI PENDAFTARAN RUMAH)
+// ==============================================================================
+
+// Sync Nombor Bip (Kadangkala Guru kemaskini No Bip selepas Admin cipta saringan)
 window.jalankanSync = async (eventId, heatId, label, mode) => {
-    if(!confirm(`Kemaskini No. Bip dari profil atlet tahun ${tahunAktif}?`)) return;
+    if(!confirm(`Tindakan ini akan menyemak profil setiap peserta di dalam saringan ini dan mengemas kini Nombor Bip mereka berdasarkan data terkini yang dimasukkan oleh Guru Rumah. Teruskan?`)) return;
     
-    console.log(`--- PROSES SYNC BERMULA (Tahun: ${tahunAktif}) ---`);
+    console.info(`--- PROSES SYNC NO BIP BERMULA (Tahun: ${tahunAktif}) ---`);
     try {
         const heatRef = doc(db, "kejohanan", tahunAktif, "acara", eventId, "saringan", heatId);
         const heatSnap = await getDoc(heatRef);
         
         if (heatSnap.exists()) {
             const data = heatSnap.data();
+            
+            // Loop secara asinkronus menggunakan Promise.all untuk kelajuan
             const pesertaUpdated = await Promise.all(data.peserta.map(async (p) => {
                 const atletRef = doc(db, "kejohanan", tahunAktif, "peserta", p.idPeserta);
                 const atletSnap = await getDoc(atletRef);
                 
                 if (atletSnap.exists()) {
                     const atletData = atletSnap.data();
+                    // Ambil noBib (format lama) atau noBip (format baru)
                     const bibBetul = atletData.noBib || atletData.noBip || p.idPeserta;
                     return { ...p, noBip: bibBetul, noBib: bibBetul };
                 } else {
-                    return p;
+                    return p; // Kekalkan data lama jika profil hilang
                 }
             }));
 
+            // Tulis ganti array peserta dalam dokumen saringan
             await updateDoc(heatRef, { peserta: pesertaUpdated });
-            alert("Sync Selesai! Nombor badan telah dikemaskini.");
-            pilihSaringan(eventId, heatId, label, mode);
+            alert("Sync Selesai! Semua Nombor Bip telah dikemaskini.");
+            pilihSaringan(eventId, heatId, label, mode); // Refresh UI
         }
     } catch (e) {
-        alert("Ralat Sync: " + e.message);
+        console.error(e);
+        alert("Gagal melakukan proses Sync: " + e.message);
     }
 };
 
+// Auto Tarik (Agihan Auto) - Tarik peserta dari koleksi 'peserta' masuk ke dalam 'saringan'
 window.agihanAuto = async (eventId, heatId, label, mode) => {
     const eventDetail = await getEventDetail(tahunAktif, eventId);
-    if (!confirm(`Agih semua peserta yang mendaftar acara ${eventDetail.nama} (${eventDetail.kategori}) ke dalam saringan ini?`)) return;
+    
+    if (!confirm(`AMARAN: Tindakan ini akan membuang senarai peserta sedia ada dalam saringan ini dan menggantikannya dengan SEMUA peserta berdaftar (Rumah Sukan) untuk acara ${eventDetail.nama} (${eventDetail.kategori}). Adakah anda pasti?`)) return;
 
-    console.log("Memulakan Agihan Auto...");
+    console.info("Memulakan proses Tarik Data (Agihan Auto)...");
     try {
+        // Bina Query: Cari peserta di tahun aktif, kategori sama, dan array 'acaraDaftar' mempunyai nama acara ini
         const q = query(
             collection(db, "kejohanan", tahunAktif, "peserta"),
             where("kategori", "==", eventDetail.kategori),
@@ -567,34 +1221,42 @@ window.agihanAuto = async (eventId, heatId, label, mode) => {
         );
 
         const snap = await getDocs(q);
-        const senarai = snap.docs.map((d, index) => {
+        
+        // Format semula data Firestore menjadi array objek yang difahami oleh sistem Saringan
+        const senaraiBaru = snap.docs.map((d, index) => {
             const data = d.data();
             return {
                 idPeserta: d.id,
-                nama: data.nama,
-                noBip: data.noBib || d.id,
-                idRumah: data.rumah || '',
-                lorong: index + 1,
+                nama: data.nama || 'Tiada Nama',
+                noBip: data.noBib || data.noBip || '-',
+                idRumah: data.rumah || data.idRumah || '',
+                lorong: index + 1, // Susun secara rawak mengikut index query
                 pencapaian: ""
             };
         });
 
-        if (senarai.length === 0) {
-            alert("Tiada peserta ditemui bagi kategori dan acara ini.");
+        if (senaraiBaru.length === 0) {
+            alert(`Tiada peserta ditemui bagi kategori ${eventDetail.kategori} yang mendaftar untuk acara ${eventDetail.nama}. Sila minta Guru Rumah mengemaskini pendaftaran.`);
             return;
         }
 
+        // Tulis data ke Firestore (Overwrite field 'peserta')
         const heatRef = doc(db, "kejohanan", tahunAktif, "acara", eventId, "saringan", heatId);
-        await updateDoc(heatRef, { peserta: senarai });
+        await updateDoc(heatRef, { peserta: senaraiBaru });
 
-        alert(`${senarai.length} peserta berjaya diagihkan!`);
-        pilihSaringan(eventId, heatId, label, mode);
+        alert(`Tahniah! ${senaraiBaru.length} peserta telah berjaya ditarik masuk ke dalam saringan ini.`);
+        pilihSaringan(eventId, heatId, label, mode); // Refresh UI
 
     } catch (e) {
-        console.error(e);
-        alert("Ralat Agihan: " + e.message);
+        console.error("Ralat Agihan Auto:", e);
+        alert("Gagal melakukan agihan auto. Mesej pelayan: " + e.message);
     }
 };
 
-// Lancarkan paparan pertama
-renderSetupForm();
+// ==============================================================================
+// START SISTEM
+// ==============================================================================
+// Muatkan paparan setup apabila fail JS siap dijalankan
+document.addEventListener('DOMContentLoaded', () => {
+    renderSetupForm();
+});
