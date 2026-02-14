@@ -833,11 +833,14 @@ const LIST_ACARA_PADANG = ["Lompat Jauh", "Lontar Peluru", "Rejam Lembing", "Lem
 const LIST_ACARA_KHAS = ["Lompat Tinggi"]; 
 
 window.pilihSaringan = async (eventId, heatId, labelAcara, mode) => {
+    // DEBUG: Lihat di Console browser (F12) untuk pastikan mode adalah 'input'
+    console.log(`Memilih Saringan: ${labelAcara}, Mode: ${mode}`);
+
     // 1. Paparan Loading
     contentArea.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary"></div><p>Memuatkan data borang...</p></div>';
 
     try {
-        const isEditMode = (mode === 'input'); // True jika Input Keputusan, False jika Urus/Cetak
+        const isEditMode = (mode === 'input'); // True jika Input Keputusan
         const tStr = tahunAktif.toString();
 
         // 2. Dapatkan Data
@@ -850,18 +853,29 @@ window.pilihSaringan = async (eventId, heatId, labelAcara, mode) => {
         }
 
         const data = heatSnap.data();
-        // Simpan data dalam variable global untuk fungsi simpan nanti
+        
+        // Simpan data dalam variable global (PENTING untuk butang Tambah Ketinggian)
         window.currentHeatData = data; 
         window.currentHeatId = heatId;
         window.currentEventId = eventId;
         window.currentLabel = labelAcara;
+        window.currentMode = mode; 
 
         // 3. Tentukan Jenis Acara & Borang
-        // Bersihkan nama acara untuk pengecekan
-        const cleanName = labelAcara.replace(/L\d+|P\d+/g, '').trim(); // Buang L18/P15 dsb
+        // Tukar nama acara ke huruf besar untuk memudahkan perbandingan
+        const namaAcaraUpper = labelAcara.toUpperCase();
         
-        const isHighJump = LIST_ACARA_KHAS.some(x => labelAcara.includes(x));
-        const isField = LIST_ACARA_PADANG.some(x => labelAcara.includes(x));
+        // LOGIK PENGESANAN YANG LEBIH TEPAT
+        const isHighJump = namaAcaraUpper.includes('LOMPAT TINGGI');
+        
+        // Cek acara padang lain (Lompat Jauh, Lontar Peluru, dll)
+        // Kita anggap ia acara padang jika ada perkataan 'LOMPAT', 'LONTAR', 'REJAM', 'LEMPAR'
+        // TETAPI bukan Lompat Tinggi (sebab Lompat Tinggi ada borang khas)
+        const isField = (namaAcaraUpper.includes('LOMPAT') || 
+                         namaAcaraUpper.includes('LONTAR') || 
+                         namaAcaraUpper.includes('REJAM') || 
+                         namaAcaraUpper.includes('LEMPAR')) && !isHighJump;
+
         const isFinal = (data.jenis === 'akhir');
 
         // Tentukan Tajuk
@@ -873,7 +887,7 @@ window.pilihSaringan = async (eventId, heatId, labelAcara, mode) => {
             badge = `<span class="badge bg-warning text-dark ms-2">AKHIR</span>`;
         }
 
-        // 4. HEADER (Sama untuk semua)
+        // 4. HEADER
         let htmlHeader = `
             <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-2 d-print-none">
                 <div>
@@ -900,7 +914,10 @@ window.pilihSaringan = async (eventId, heatId, labelAcara, mode) => {
         // 5. BODY (Pilih ikut jenis acara)
         let htmlBody = '';
         
-        // --- LOGIK PEMILIHAN BORANG ---
+        // Parameter untuk render function: (data, isReadOnly)
+        // isReadOnly adalah TERBALIK daripada isEditMode.
+        // Jika Input Mode (Edit=True), maka ReadOnly=False.
+        
         if (isHighJump) {
             htmlBody = renderBorangLompatTinggi(data, !isEditMode);
         } else if (isField) {
@@ -910,6 +927,12 @@ window.pilihSaringan = async (eventId, heatId, labelAcara, mode) => {
         }
 
         contentArea.innerHTML = htmlHeader + htmlBody;
+
+    } catch (e) {
+        console.error("Ralat pilihSaringan:", e);
+        contentArea.innerHTML = `<div class="alert alert-danger">Ralat: ${e.message}</div>`;
+    }
+};
 
         // 6. EVENT LISTENERS (Untuk Butang Simpan)
         // Kita pasang listener secara manual sebab HTML string susah nak pass object
@@ -1506,6 +1529,7 @@ window.agihanAuto = async (eventId, heatId, label, mode) => {
 document.addEventListener('DOMContentLoaded', () => {
     renderSetupForm();
 });
+
 
 
 
