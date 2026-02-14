@@ -120,7 +120,7 @@ export async function getEventDetail(tahun, eventId) {
 }
 
 /**
- * 7. Initialize Kejohanan Tahun Baru (VERSI AUTO-GENERATE - DIKEMASKINI)
+ * 7. Initialize Kejohanan Tahun Baru (VERSI AUTO-GENERATE)
  * Menjana rumah sukan dan acara SAHAJA. TIDAK menjana saringan.
  */
 export async function initializeTournament(tahun) { 
@@ -172,14 +172,13 @@ export async function initializeTournament(tahun) {
                     tarikhDicipta: new Date()
                 });
 
-                // PEMBETULAN:
-                // Bahagian cipta "Saringan 1" telah DIPADAMKAN.
-                // Saringan hanya akan wujud bila Admin tekan butang "Jana Saringan" nanti.
+                // NOTA: Kita TIDAK mencipta saringan di sini.
+                // Saringan hanya dijana melalui butang "Jana Saringan" (generateHeats).
             }
         }
 
         await batch.commit();
-        console.log("--- SETUP SELESAI: STRUKTUR DATA DIJANA (TANPA SARINGAN) ---");
+        console.log("--- SETUP SELESAI: STRUKTUR DATA DIJANA ---");
         return { success: true };
     } catch (e) {
         console.error("RALAT SETUP:", e);
@@ -188,37 +187,34 @@ export async function initializeTournament(tahun) {
 }
 
 // =========================================================
-// TAMBAHAN: FUNGSI JANA SARINGAN (AUTO DRAW)
+// 8. FUNGSI JANA SARINGAN (VERSI PINTAR / SMART AUTO-DRAW)
 // =========================================================
-
-/**
- * 8. Jana Saringan Automatik
- * @param {string} tahun - Tahun kejohanan (cth: "2026")
- * @param {string} eventId - ID dokumen acara (cth: "L8_100m")
- * @param {number} maxLorong - Jumlah lorong (default 8)
- */
 export async function generateHeats(tahun, eventId, maxLorong = 8) {
     console.log(`Menjana saringan untuk: ${eventId}`);
 
     try {
         const tStr = tahun.toString();
 
-        // 1. Dapatkan info acara (untuk tahu nama acara sebenar, cth: "100m")
+        // 1. Dapatkan info acara
         const eventRef = doc(db, "kejohanan", tStr, "acara", eventId);
         const eventSnap = await getDoc(eventRef);
         
         if (!eventSnap.exists()) throw new Error("Acara tidak dijumpai.");
         const eventData = eventSnap.data();
         
-        const namaAcara = eventData.nama; // cth: "100m"
-        const kategori = eventData.kategori; // cth: "L8"
+        const namaAcara = eventData.nama; 
+        const kategori = eventData.kategori;
 
-        // 2. Cari semua peserta yang daftar acara ini + kategori ini
+        // Tentukan Jenis Acara (PENTING UNTUK LOGIK AKHIR)
+        const isRelay = namaAcara.toLowerCase().startsWith("4x");
+        const isPadang = ACARA_PADANG.includes(namaAcara) || ACARA_KHAS.includes(namaAcara);
+
+        // 2. Cari peserta yang daftar
         const pesertaRef = collection(db, "kejohanan", tStr, "peserta");
         const q = query(
             pesertaRef,
             where("kategori", "==", kategori),
-            where("acaraDaftar", "array-contains", namaAcara) // Cari dalam array
+            where("acaraDaftar", "array-contains", namaAcara)
         );
 
         const snapshot = await getDocs(q);
@@ -226,63 +222,93 @@ export async function generateHeats(tahun, eventId, maxLorong = 8) {
         snapshot.forEach(doc => {
             const p = doc.data();
             senaraiPeserta.push({
-                id: doc.id,
+                idPeserta: doc.id,
                 nama: p.nama,
-                noBib: p.noBib,
-                rumah: p.rumah,
-                sekolah: p.sekolah || "-" // Jika ada field sekolah
+                noBib: p.noBib || p.noBip || "-",
+                idRumah: p.idRumah || p.rumah,
+                sekolah: p.sekolah || "-" 
             });
         });
 
-        // Jika tiada peserta
         if (senaraiPeserta.length === 0) {
             return { success: false, message: "Tiada peserta mendaftar untuk acara ini." };
         }
 
-        // 3. Acak Peserta (Shuffle) supaya adil (Random Lane)
+        // 3. Acak Peserta (Shuffle)
         senaraiPeserta = shuffleArray(senaraiPeserta);
-
-        // 4. Bahagikan kepada saringan
         const jumlahPeserta = senaraiPeserta.length;
+
+        // 4. LOGIK PENENTUAN: SARINGAN ATAU AKHIR?
+        let isTerusAkhir = false;
+
+        if (isPadang) {
+            isTerusAkhir = true; // Acara padang sentiasa Akhir
+        } else if (isRelay) {
+            isTerusAkhir = jumlahPeserta <= 4; // Relay <= 4 pasukan -> Akhir
+        } else {
+            isTerusAkhir = jumlahPeserta <= 8; // Individu <= 8 orang -> Akhir
+        }
+
+        // 5. Bina Struktur Saringan / Akhir
         let heats = [];
-        
-        // Logik mudah: Pecahkan ikut maxLorong
-        // Contoh: 10 orang, max 8. -> Heat 1 (5 org), Heat 2 (5 org) atau Heat 1 (8), Heat 2 (2)
-        // Di sini kita guna logik mudah: Penuhkan saringan 1 dulu.
-        
-        let currentHeat = 1;
-        while (senaraiPeserta.length > 0) {
-            // Ambil peserta seramai maxLorong
-            const chunk = senaraiPeserta.splice(0, maxLorong);
+        let jenisDokumen = isTerusAkhir ? "akhir" : "saringan";
+        let statusAcara = isTerusAkhir ? "akhir" : "saringan";
+
+        if (isTerusAkhir) {
+            // --- SENARIO 1: ACARA AKHIR ---
+            // Semua peserta masuk dalam satu kumpulan
             
-            // Format peserta dengan nombor lorong
-            const pesertaDenganLorong = chunk.map((p, index) => ({
+            // Susun lorong/giliran
+            const pesertaFinal = senaraiPeserta.map((p, index) => ({
                 ...p,
-                lorong: index + 1, // Lorong 1, 2, 3...
-                masa: "", // Kosongkan untuk keputusan nanti
-                kedudukan: 0,
-                catatan: ""
+                lorong: index + 1, 
+                pencapaian: "",
+                kedudukan: 0
             }));
 
             heats.push({
-                noSaringan: currentHeat,
-                namaSaringan: `Saringan ${currentHeat}`,
-                peserta: pesertaDenganLorong
+                noSaringan: 1,
+                namaDokumen: "Saringan 1", // Kita kekalkan ID dokumen sebagai Saringan 1
+                jenis: "akhir", // TAPI jenisnya adalah 'akhir' (UI akan baca ini)
+                peserta: pesertaFinal
             });
-            currentHeat++;
+
+        } else {
+            // --- SENARIO 2: SARINGAN BIASA ---
+            // Pecahkan ikut maxLorong (8)
+            let currentHeat = 1;
+            let tempPeserta = [...senaraiPeserta];
+
+            while (tempPeserta.length > 0) {
+                const chunk = tempPeserta.splice(0, maxLorong);
+                
+                const pesertaHeat = chunk.map((p, index) => ({
+                    ...p,
+                    lorong: index + 1,
+                    pencapaian: "",
+                    kedudukan: 0
+                }));
+
+                heats.push({
+                    noSaringan: currentHeat,
+                    namaDokumen: `Saringan ${currentHeat}`,
+                    jenis: "saringan",
+                    peserta: pesertaHeat
+                });
+                currentHeat++;
+            }
         }
 
-        // 5. Simpan ke Database (Batch Write)
+        // 6. Simpan ke Database (Batch Write)
         const batch = writeBatch(db);
-
-        // Padam saringan lama dulu (jika perlu) atau timpa sahaja
-        // Kita loop array heats yang baru dijana
+        
         for (const heat of heats) {
-            const heatRef = doc(db, "kejohanan", tStr, "acara", eventId, "saringan", heat.namaSaringan);
+            const heatRef = doc(db, "kejohanan", tStr, "acara", eventId, "saringan", heat.namaDokumen);
             batch.set(heatRef, {
                 noSaringan: heat.noSaringan,
                 peserta: heat.peserta,
-                status: "sedia", // Sedia untuk input keputusan
+                jenis: heat.jenis, // Field PENTING: UI akan baca ini untuk tulis "ACARA AKHIR"
+                status: "sedia",
                 tarikhJana: new Date()
             });
         }
@@ -291,12 +317,17 @@ export async function generateHeats(tahun, eventId, maxLorong = 8) {
         batch.update(eventRef, {
             jumlahPeserta: jumlahPeserta,
             jumlahSaringan: heats.length,
-            status: "berlangsung" // Tukar status kepada berlangsung
+            status: statusAcara, // 'akhir' atau 'saringan'
+            tarikhKemaskini: new Date()
         });
 
         await batch.commit();
 
-        return { success: true, message: `${jumlahPeserta} peserta berjaya disusun dalam ${heats.length} saringan.` };
+        let mesej = isTerusAkhir 
+            ? `Berjaya! ${jumlahPeserta} peserta disusun terus ke ACARA AKHIR.`
+            : `Berjaya! ${jumlahPeserta} peserta disusun ke dalam ${heats.length} SARINGAN.`;
+
+        return { success: true, message: mesej };
 
     } catch (error) {
         console.error("Ralat Jana Saringan:", error);
