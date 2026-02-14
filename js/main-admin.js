@@ -824,92 +824,173 @@ window.pilihAcara = async (eventId, label, mode) => {
 };
 
 // ==============================================================================
-// 10. BORANG DINAMIK (BALAPAN, PADANG, LOMPAT TINGGI)
+// 10. PAPARKAN DATA SARINGAN (INPUT KEPUTUSAN / LIHAT PESERTA)
 // ==============================================================================
-window.pilihSaringan = async (eventId, heatId, label, mode) => {
-    contentArea.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary" style="width:3rem;height:3rem;"></div><p class="mt-2 text-muted">Menjana borang...</p></div>';
-    
-    const heats = await getHeatsData(tahunAktif, eventId);
-    const h = heats.find(item => item.id === heatId);
-    const eventDetail = await getEventDetail(tahunAktif, eventId);
-    const record = await getEventRecord(eventDetail.nama, eventDetail.kategori);
+window.pilihSaringan = async (eventId, heatId, labelAcara, mode) => {
+    // 1. Paparan Loading
+    contentArea.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary"></div><p>Memuatkan data saringan...</p></div>';
 
-    const isReadOnly = (mode === 'urus');
+    try {
+        // 2. Dapatkan Data Saringan Spesifik
+        const tStr = tahunAktif.toString();
+        const heatRef = doc(db, "kejohanan", tStr, "acara", eventId, "saringan", heatId);
+        const heatSnap = await getDoc(heatRef);
 
-    let html = `
-        <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-3">
-            <div>
-                <h4 class="fw-bold text-dark mb-0 text-uppercase">${label} - Saringan ${h.noSaringan}</h4>
-                <div class="d-flex gap-3 d-print-none mt-2">
-                    <button class="btn btn-sm btn-outline-info rounded-pill" 
-                            onclick="jalankanSync('${eventId}', '${heatId}', '${label}', '${mode}')">
-                        <i class="bi bi-arrow-repeat me-1"></i>Sync No Bip Profil
+        if (!heatSnap.exists()) {
+            contentArea.innerHTML = '<div class="alert alert-danger">Data saringan tidak dijumpai.</div>';
+            return;
+        }
+
+        const data = heatSnap.data();
+        const peserta = data.peserta || [];
+
+        // --- PEMBETULAN: Tentukan Tajuk (Saringan vs Akhir) ---
+        let tajukSaringan = `Saringan ${data.noSaringan}`;
+        let badgeJenis = `<span class="badge bg-secondary ms-2">Saringan</span>`;
+
+        // Jika database kata ini adalah "akhir"
+        if (data.jenis === 'akhir') {
+            tajukSaringan = "ACARA AKHIR";
+            badgeJenis = `<span class="badge bg-warning text-dark ms-2">AKHIR</span>`;
+        }
+
+        // 3. Header HTML
+        let html = `
+            <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-2 d-print-none">
+                <div>
+                    <button class="btn btn-sm btn-outline-secondary me-2" onclick="pilihAcara('${eventId}', '${labelAcara}', '${mode}')">
+                        <i class="bi bi-arrow-left"></i> Kembali
                     </button>
-                    ${isReadOnly ? `
-                    <button class="btn btn-sm btn-warning fw-bold rounded-pill text-dark" 
-                            onclick="window.agihanAuto('${eventId}', '${heatId}', '${label}', '${mode}')">
-                        <i class="bi bi-magic me-1"></i>Tarik Data Pendaftaran (Auto)
-                    </button>` : ''}
+                    <h5 class="d-inline-block fw-bold text-primary mb-0">${labelAcara}</h5>
+                </div>
+                <div>
+                    ${badgeJenis}
+                    <button class="btn btn-sm btn-success ms-2" onclick="window.print()">
+                        <i class="bi bi-printer"></i> Cetak
+                    </button>
                 </div>
             </div>
-            <div class="d-print-none mt-3 mt-md-0 d-flex gap-2">
-                ${isReadOnly ? `
-                <button class="btn btn-dark shadow-sm px-4" onclick="window.print()">
-                    <i class="bi bi-printer me-2"></i> Cetak Borang Hakim
-                </button>` : ''}
-                <button class="btn btn-light border shadow-sm" onclick="pilihAcara('${eventId}', '${label}', '${mode}')">
-                    Kembali
+
+            <div class="text-center mb-4">
+                <h3 class="fw-bold text-uppercase">${labelAcara}</h3>
+                <h4 class="fw-bold text-dark bg-light py-2 border border-dark rounded">${tajukSaringan}</h4>
+            </div>
+        `;
+
+        // 4. Input Markah / Paparan Peserta
+        if (peserta.length === 0) {
+            html += `<div class="alert alert-warning text-center">Tiada peserta dalam saringan ini.</div>`;
+        } else {
+            // Sort peserta ikut lorong
+            peserta.sort((a, b) => a.lorong - b.lorong);
+
+            html += `
+            <div class="table-responsive">
+                <table class="table table-bordered table-striped align-middle">
+                    <thead class="table-dark text-center">
+                        <tr>
+                            <th style="width: 80px;">Lorong</th>
+                            <th style="width: 100px;">No. Bib</th>
+                            <th>Nama Peserta</th>
+                            <th>Pasukan/Rumah</th>
+                            <th style="width: 150px;">Keputusan</th>
+                            <th style="width: 100px;">Kedudukan</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            peserta.forEach((p, index) => {
+                // Input Keputusan (Masa/Jarak)
+                const nilaiMasa = p.pencapaian || ""; 
+                const nilaiKedudukan = p.kedudukan || "";
+                
+                // Warna baris jika sudah ada keputusan
+                const highlight = nilaiKedudukan > 0 ? "table-success" : "";
+
+                html += `
+                    <tr class="${highlight}">
+                        <td class="text-center fw-bold fs-5">${p.lorong}</td>
+                        <td class="text-center">${p.noBib || '-'}</td>
+                        <td>
+                            <div class="fw-bold">${p.nama}</div>
+                            <small class="text-muted d-block d-print-none">${p.sekolah || ''}</small>
+                        </td>
+                        <td class="text-center">${p.idRumah ? p.idRumah.toUpperCase() : '-'}</td>
+                        
+                        <td>
+                            <input type="text" class="form-control text-center input-keputusan" 
+                                id="masa-${index}" 
+                                value="${nilaiMasa}" 
+                                placeholder="--.--"
+                                onchange="kemaskiniDataTempatan('${index}', 'pencapaian', this.value)">
+                        </td>
+
+                        <td>
+                            <input type="number" class="form-control text-center input-kedudukan fw-bold" 
+                                id="kd-${index}" 
+                                value="${nilaiKedudukan > 0 ? nilaiKedudukan : ''}" 
+                                min="0" max="20"
+                                onchange="kemaskiniDataTempatan('${index}', 'kedudukan', this.value)">
+                        </td>
+                    </tr>
+                `;
+            });
+
+            html += `
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="d-flex justify-content-end mt-4 d-print-none">
+                <button id="btn-simpan-result" class="btn btn-primary btn-lg shadow" onclick="simpanKeputusanSaringan('${eventId}', '${heatId}', '${labelAcara}')">
+                    <i class="bi bi-save me-2"></i> Simpan Keputusan
                 </button>
             </div>
-        </div>
-        
-        <div class="card bg-light mb-4 border border-2 border-dark" style="border-radius: 10px;">
-            <div class="card-body py-2 row text-center small align-items-center">
-                <div class="col-4 border-end border-dark">
-                    <span class="text-muted d-block text-uppercase" style="font-size:0.7rem;">Rekod Kejohanan</span>
-                    <span class="text-danger fw-bold fs-5">${record?.rekod || 'Tiada Rekod'}</span>
-                </div>
-                <div class="col-4 border-end border-dark">
-                    <span class="text-muted d-block text-uppercase" style="font-size:0.7rem;">Tahun Pemegang</span>
-                    <span class="fw-bold text-dark fs-6">${record?.tahun || '-'}</span>
-                </div>
-                <div class="col-4">
-                    <span class="text-muted d-block text-uppercase" style="font-size:0.7rem;">Pemegang Rekod</span>
-                    <span class="fw-bold text-dark text-truncate d-block">${record?.nama || '-'}</span>
-                </div>
-            </div>
-        </div>
-    `;
+            `;
+        }
 
-    // Pilihan Render mengikut Jenis Acara (Logik dari array CONSTANT)
-    if (ACARA_KHAS.includes(eventDetail.nama)) {
-        html += renderBorangLompatTinggi(h, isReadOnly);
-    } else if (ACARA_PADANG.includes(eventDetail.nama)) {
-        html += renderBorangPadang(h, isReadOnly);
-    } else {
-        html += renderBorangBalapan(h, isReadOnly);
+        contentArea.innerHTML = html;
+
+        // Simpan data peserta dalam variable global sementara untuk tujuan edit
+        window.currentPesertaData = peserta;
+
+    } catch (error) {
+        console.error("Ralat papar saringan:", error);
+        contentArea.innerHTML = `<div class="alert alert-danger">Ralat: ${error.message}</div>`;
     }
-    
-    // Tanda tangan untuk Cetakan (Hakim)
-    html += `
-        <div class="row mt-5 d-none d-print-flex">
-            <div class="col-6 text-center">
-                <p>Disahkan Oleh Hakim:</p>
-                <div style="border-bottom: 1px solid black; height: 50px; width: 80%; margin: 0 auto;"></div>
-                <p class="mt-2">( Nama: ..................................................... )</p>
-            </div>
-            <div class="col-6 text-center">
-                <p>Disahkan Oleh Ketua Hakim:</p>
-                <div style="border-bottom: 1px solid black; height: 50px; width: 80%; margin: 0 auto;"></div>
-                <p class="mt-2">( Nama: ..................................................... )</p>
-            </div>
-        </div>
-    `;
+};
 
-    contentArea.innerHTML = html;
-    
-    // Jika dalam mode Input Keputusan, lekatkan listener pada elemen input
-    if (!isReadOnly) attachEvents(h, eventId, heatId, label, eventDetail.nama);
+// Fungsi bantuan untuk kemaskini array sementara (supaya tidak perlu query DB setiap kali taip)
+window.kemaskiniDataTempatan = (index, field, value) => {
+    if (window.currentPesertaData && window.currentPesertaData[index]) {
+        window.currentPesertaData[index][field] = value;
+    }
+};
+
+// Fungsi Simpan ke Database
+window.simpanKeputusanSaringan = async (eventId, heatId, labelAcara) => {
+    const btn = document.getElementById('btn-simpan-result');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Menyimpan...';
+
+    try {
+        const { saveHeatResults } = await import('./modules/admin.js');
+        const res = await saveHeatResults(tahunAktif, eventId, heatId, window.currentPesertaData);
+
+        if (res.success) {
+            alert("Keputusan berjaya disimpan!");
+            pilihSaringan(eventId, heatId, labelAcara, 'input'); // Refresh page
+        } else {
+            alert("Gagal menyimpan: " + res.message);
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-save me-2"></i> Simpan Keputusan';
+        }
+    } catch (e) {
+        console.error(e);
+        alert("Ralat sistem.");
+        btn.disabled = false;
+    }
 };
 
 // ------------------------------------------------------------------------------
@@ -1312,5 +1393,6 @@ window.agihanAuto = async (eventId, heatId, label, mode) => {
 document.addEventListener('DOMContentLoaded', () => {
     renderSetupForm();
 });
+
 
 
