@@ -1154,12 +1154,12 @@ function renderBorangPadang(h, isReadOnly) {
 }
 
 // ==============================================================================
-// RENDER 3: LOMPAT TINGGI (HIGH JUMP) - DINAMIK & KEMAS
+// RENDER 3: LOMPAT TINGGI (HIGH JUMP) - PEMBETULAN INPUT
 // ==============================================================================
 function renderBorangLompatTinggi(h, isReadOnly) {
     let allHeights = new Set();
     
-    // 1. Kumpulkan ketinggian yang SUDAH ADA dalam database (jika ada)
+    // 1. Kumpulkan ketinggian yang SUDAH ADA dalam database
     if(h.peserta) {
         h.peserta.forEach(p => {
             if(p.rekodLompatan) Object.keys(p.rekodLompatan).forEach(ht => allHeights.add(ht));
@@ -1169,26 +1169,23 @@ function renderBorangLompatTinggi(h, isReadOnly) {
     // Susun ketinggian ikut urutan (1.10, 1.15, ...)
     let sorted = Array.from(allHeights).sort((a,b) => parseFloat(a) - parseFloat(b));
 
-    // 2. LOGIK PENENTUAN KOLUM
-    // Jika tiada data lagi (Acara baru / Borang Kosong), kita buat 10 kolum KOSONG
-    // Supaya hakim boleh tulis tangan di kertas.
+    // LOGIK PENTING:
+    // Jika ReadOnly (Cetak), kita nak nampak kotak kosong kalau data tiada.
+    // Jika Input, kita TIDAK MAHU kotak kosong. Kita nak user tambah ketinggian valid.
     let cols = [];
-    let isEmptyForm = sorted.length === 0;
-
-    if (isEmptyForm) {
-        // Jana 10 kolum kosong untuk cetakan
-        cols = Array(10).fill(''); 
+    
+    if (isReadOnly && sorted.length === 0) {
+        cols = Array(10).fill(''); // 10 Kolum hantu untuk cetakan
     } else {
-        // Guna data yang ada
-        cols = sorted;
+        cols = sorted; // Guna data sebenar
     }
 
     let t = `
         ${isReadOnly ? '' : `
-        <div class="mb-2 d-flex justify-content-between align-items-center d-print-none">
-            <small class="text-muted fst-italic">Untuk input, sila tambah ketinggian satu per satu.</small>
+        <div class="alert alert-info py-2 small mb-2 d-flex justify-content-between align-items-center d-print-none">
+            <span><i class="bi bi-info-circle me-2"></i>Sila tambah ketinggian palang sebelum memasukkan keputusan O/X.</span>
             <button class="btn btn-sm btn-dark rounded-pill shadow-sm" id="btn-add-height">
-                <i class="bi bi-plus-lg text-success"></i> Tambah Ketinggian Baru
+                <i class="bi bi-plus-lg text-success"></i> Tambah Ketinggian
             </button>
         </div>
         `}
@@ -1198,13 +1195,11 @@ function renderBorangLompatTinggi(h, isReadOnly) {
                     <tr>
                         <th width="40">No</th>
                         <th width="60">Bib</th>
-                        <th class="text-start" style="min-width: 250px;">Nama Peserta</th> 
+                        <th class="text-start" style="min-width: 200px;">Nama Peserta</th> 
                         
                         ${cols.map(ht => {
-                            // Kalau form kosong, header pun kosong (biar hakim tulis)
-                            // Kalau ada data, papar nilai ketinggian (cth: 1.10m)
-                            let headerLabel = isEmptyForm ? '' : `${parseFloat(ht).toFixed(2)}m`;
-                            return `<th style="min-width:45px; height: 30px;">${headerLabel}</th>`;
+                            let headerLabel = (ht === '') ? '' : `${parseFloat(ht).toFixed(2)}m`;
+                            return `<th style="min-width:50px; height: 30px;">${headerLabel}</th>`;
                         }).join('')}
 
                         <th width="80" class="bg-primary border-start border-light">Best</th>
@@ -1217,7 +1212,7 @@ function renderBorangLompatTinggi(h, isReadOnly) {
     if (!h.peserta || h.peserta.length === 0) {
         t += `<tr><td colspan="${5 + cols.length}">Tiada peserta.</td></tr>`;
     } else {
-        // Susun peserta ikut No Bib (Standard lompat tinggi)
+        // Susun peserta ikut No Bib
         h.peserta.sort((a,b) => (a.noBib || '').localeCompare(b.noBib || ''));
 
         h.peserta.forEach((p, idx) => {
@@ -1228,24 +1223,26 @@ function renderBorangLompatTinggi(h, isReadOnly) {
                     
                     <td class="text-start text-wrap py-2" style="line-height: 1.2;">
                         <div class="fw-bold text-uppercase">${p.nama}</div>
-                        <small class="text-muted d-block mt-1">${p.sekolah || 'Rumah ' + (p.idRumah || '-')}</small>
+                        <small class="text-muted d-block mt-1">${p.sekolah || (p.idRumah ? 'Rmh ' + p.idRumah : '-')}</small>
                     </td>
 
                     ${cols.map(ht => {
-                        // Jika form kosong (untuk cetak), papar kotak kosong sahaja
-                        if (isEmptyForm) {
+                        // Jika kolum hantu (untuk cetak sahaja)
+                        if (ht === '') {
                             return `<td class="border-end"></td>`;
                         }
 
-                        // Jika mod input
+                        // Jika kolum sebenar (ada ketinggian)
                         const val = p.rekodLompatan?.[ht] ? p.rekodLompatan[ht].join('') : '';
+                        
                         return `
                         <td class="p-0">
                             ${isReadOnly ? 
                                 `<div style="height:35px; line-height:35px; font-weight:bold;">${val}</div>` 
                                 : 
+                                // INPUT LOMPATAN (GRID)
                                 `<input type="text" class="form-control form-control-sm border-0 text-center hj-input p-0 fw-bold" 
-                                    style="height:35px; letter-spacing:2px; text-transform:uppercase; background-color: #f8f9fa;"
+                                    style="height:35px; letter-spacing:2px; text-transform:uppercase; background-color: #fff;"
                                     data-ht="${ht}" value="${val}" maxlength="3">`
                             }
                         </td>`;
@@ -1265,6 +1262,20 @@ function renderBorangLompatTinggi(h, isReadOnly) {
         });
     }
 
+    t += `</tbody></table></div>`;
+
+    if (!isReadOnly) {
+        t += `
+        <div class="d-grid mt-3">
+            <button class="btn btn-primary shadow-sm py-2" id="btn-save-results">
+                <i class="bi bi-save me-2"></i>SIMPAN KEPUTUSAN
+            </button>
+        </div>
+        `;
+    }
+
+    return t;
+}
     t += `</tbody></table></div>`;
 
     // BAHAGIAN BAWAH (PANDUAN & BUTANG)
@@ -1502,6 +1513,7 @@ window.agihanAuto = async (eventId, heatId, label, mode) => {
 document.addEventListener('DOMContentLoaded', () => {
     renderSetupForm();
 });
+
 
 
 
