@@ -1019,8 +1019,9 @@ function generateFieldTable(data) {
 }
 
 /**
- * Menjana HTML jadual untuk acara Lompat Tinggi (High Jump).
- * Menggunakan logik grid dinamik.
+ * ==============================================================================
+ * GENERATOR JADUAL: LOMPAT TINGGI (HIGH JUMP) - VERSI KEMASKINI
+ * ==============================================================================
  */
 function generateHighJumpTable(data) {
     // 1. Dapatkan semua ketinggian unik yang pernah direkodkan
@@ -1030,10 +1031,11 @@ function generateHighJumpTable(data) {
             if(p.rekodLompatan) Object.keys(p.rekodLompatan).forEach(ht => allHeights.add(ht));
         });
     }
+    
     // Susun ketinggian (1.00, 1.05...)
     let sortedCols = Array.from(allHeights).sort((a,b) => parseFloat(a) - parseFloat(b));
     
-    // Jika tiada data langsung, sediakan 8 kolom kosong untuk borang manual
+    // Jika tiada data langsung, sediakan 8 kolom kosong
     if(sortedCols.length === 0) sortedCols = Array(8).fill('');
 
     let html = `
@@ -1045,18 +1047,20 @@ function generateHighJumpTable(data) {
         </div>
 
         <div class="table-responsive shadow-sm bg-white rounded p-1">
-            <table class="table table-bordered text-center align-middle mb-0 table-sm border-dark" id="hj-table">
-                <thead class="table-dark small">
+            <table class="table table-bordered text-center align-middle mb-0 table-sm border-secondary" id="hj-table">
+                <thead class="bg-white text-dark border-bottom border-dark small">
                     <tr>
-                        <th width="40">No</th>
-                        <th width="60">Bib</th>
-                        <th class="text-start" style="min-width: 180px;">Nama</th>
+                        <th width="40" class="py-2">No</th>
+                        <th width="60" class="py-2">Bib</th>
+                        <th class="text-start py-2" style="min-width: 180px;">Nama</th>
+                        
                         ${sortedCols.map(ht => {
                             let label = ht ? parseFloat(ht).toFixed(2) + 'm' : '';
-                            return `<th class="col-height" data-val="${ht}" style="min-width:45px;">${label}</th>`;
+                            return `<th class="col-height py-2" data-val="${ht}" style="min-width:45px;">${label}</th>`;
                         }).join('')}
-                        <th width="70" class="bg-primary border-start border-light">Best</th>
-                        <th width="50">Rank</th>
+                        
+                        <th width="70" class="bg-light border-start border-secondary py-2">Best</th>
+                        <th width="50" class="py-2">Rank</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -1071,7 +1075,7 @@ function generateHighJumpTable(data) {
                 <td class="fw-bold">${p.noBib||'-'}</td>
                 <td class="text-start">
                     <div class="fw-bold text-truncate">${p.nama}</div>
-                    <small>${p.idRumah}</small>
+                    <small class="text-muted">${p.idRumah}</small>
                 </td>
             `;
 
@@ -1086,14 +1090,14 @@ function generateHighJumpTable(data) {
                     <td class="p-0 position-relative">
                         <div class="print-only fw-bold" style="min-height:25px; line-height:25px;">${cellVal}</div>
                         <input type="text" class="form-control form-control-sm border-0 text-center p-0 screen-only input-hj font-monospace fw-bold text-uppercase" 
-                               style="letter-spacing:2px; height:100%;"
+                               style="letter-spacing:2px; height:100%; min-height: 30px;"
                                data-ht="${ht}" value="${cellVal}" maxlength="3">
                     </td>
                 `;
             });
 
             html += `
-                <td class="bg-primary bg-opacity-10 fw-bold border-start border-secondary">
+                <td class="bg-light fw-bold border-start border-secondary">
                     ${p.pencapaian || ''}
                 </td>
                 <td>
@@ -1109,31 +1113,54 @@ function generateHighJumpTable(data) {
     return html;
 }
 
-// Helper untuk Tambah Ketinggian secara Dinamik
+/**
+ * Fungsi Tambah Ketinggian (Lompat Tinggi)
+ * Menggunakan manipulasi DOM terus untuk update pantas tanpa refresh
+ */
 window.tambahKetinggianBaru = () => {
     const val = prompt("Masukkan ketinggian palang (m):", "1.xx");
     if (!val || isNaN(val)) return;
     
     const formatted = parseFloat(val).toFixed(2);
     
-    // Refresh paparan dengan menambah data palsu sementara ke cache
-    // supaya bila re-render, kolom baru muncul.
-    // (Nota: Cara yang lebih baik adalah memanipulasi DOM terus, tapi re-render lebih selamat utk data integrity)
-    if(window.currentHeatDataCache.peserta.length > 0) {
-        // Tambah key kosong pada peserta pertama sebagai trigger
-        if(!window.currentHeatDataCache.peserta[0].rekodLompatan) window.currentHeatDataCache.peserta[0].rekodLompatan = {};
-        window.currentHeatDataCache.peserta[0].rekodLompatan[formatted] = [];
+    // 1. Update Cache Data (Supaya bila tekan SIMPAN, kolom baru ini wujud)
+    if(window.currentHeatDataCache && window.currentHeatDataCache.peserta) {
+        window.currentHeatDataCache.peserta.forEach(p => {
+            if(!p.rekodLompatan) p.rekodLompatan = {};
+            // Init empty array untuk ketinggian baru
+            if(!p.rekodLompatan[formatted]) p.rekodLompatan[formatted] = [];
+        });
     }
+
+    // 2. Update Interface (DOM) Terus - Lebih Pantas & Stabil
+    const table = document.getElementById('hj-table');
+    if (!table) return;
+
+    // A. Tambah Header (Sebelum 2 kolom terakhir: Best & Rank)
+    const theadRow = table.querySelector('thead tr');
+    const insertIdx = theadRow.children.length - 2; // Posisi sebelum Best
     
-    // Simpan context untuk re-render
-    const ctx = window.activeContext;
-    const isHighJump = true; // Kita tahu ini high jump
+    const th = document.createElement('th');
+    th.className = "col-height py-2 animate__animated animate__fadeIn";
+    th.setAttribute('data-val', formatted);
+    th.style.minWidth = "45px";
+    th.innerText = formatted + 'm';
     
-    // Re-render table body sahaja (supaya tak reload page penuh)
-    const newBody = generateHighJumpTable(window.currentHeatDataCache);
-    // Gantikan bahagian table (hacky but works within single file constraints)
-    // Sebaiknya panggil semula main function
-    paparkanPerincianSaringan(ctx.eventId, ctx.heatId, ctx.labelAcara, ctx.jenisSaringan);
+    theadRow.insertBefore(th, theadRow.children[insertIdx]);
+
+    // B. Tambah Input pada setiap baris peserta
+    const tbodyRows = table.querySelectorAll('tbody tr');
+    tbodyRows.forEach(row => {
+        const td = document.createElement('td');
+        td.className = "p-0 position-relative animate__animated animate__fadeIn";
+        td.innerHTML = `
+            <div class="print-only fw-bold" style="min-height:25px; line-height:25px;"></div>
+            <input type="text" class="form-control form-control-sm border-0 text-center p-0 screen-only input-hj font-monospace fw-bold text-uppercase" 
+                   style="letter-spacing:2px; height:100%; min-height: 30px;"
+                   data-ht="${formatted}" value="" maxlength="3">
+        `;
+        row.insertBefore(td, row.children[insertIdx]);
+    });
 };
 
 
@@ -1494,3 +1521,4 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // End of File
+
