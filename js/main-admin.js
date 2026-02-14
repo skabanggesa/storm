@@ -2,47 +2,32 @@
  * ==============================================================================
  * SISTEM PENGURUSAN KEJOHANAN OLAHRAGA TAHUNAN (KOT)
  * FAIL: main-admin.js
- * VERSI: FINAL (GABUNGAN FUNGSI ASAL + PEMBAIKAN INPUT)
+ * VERSI: OPTIMIZED & FIXED (Backup/Restore/CSV + High Jump Fix)
  * ==============================================================================
  */
 
+// 1. IMPORT MODUL PENTING
 import { 
     initializeTournament, 
-    getEventsReadyForResults, 
     getHeatsData, 
     saveHeatResults,
-    getEventDetail,
-    getEventRecord,
     saveBulkRecords,
-    generateHeats,
-    ACARA_PADANG,
-    ACARA_KHAS
+    generateHeats
 } from './modules/admin.js';
 
-import { highJumpLogic } from './modules/highjump-logic.js'; 
 import { db } from './firebase-config.js';
 
-// --- IMPORT FIRESTORE ---
 import { 
-    doc, 
-    getDoc, 
-    updateDoc, 
-    setDoc, 
-    collection, 
-    query, 
-    where, 
-    getDocs,
-    writeBatch,
-    deleteDoc
+    doc, getDoc, updateDoc, setDoc, collection, getDocs, writeBatch, deleteDoc, query, where 
 } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
 
 // ==============================================================================
-// GLOBAL VARIABLES
+// 0. GLOBAL VARIABLES
 // ==============================================================================
 let tahunAktif = sessionStorage.getItem("tahun_aktif") || new Date().getFullYear().toString(); 
 const contentArea = document.getElementById('content-area');
 
-// Variable Global untuk Simpanan Sementara Data (Penting untuk Save/Edit)
+// Variable Global (State Management)
 window.currentHeatData = null;
 window.currentHeatId = null;
 window.currentEventId = null;
@@ -50,96 +35,114 @@ window.currentLabel = null;
 window.currentMode = 'input'; 
 
 // ==============================================================================
-// 1. INITIALIZATION & NAVIGASI
+// 1. INIT & NAVIGASI
 // ==============================================================================
 document.addEventListener('DOMContentLoaded', async () => {
-    // Sembunyikan tab Input Keputusan lama jika ada (elak keliru)
-    const btnInput = document.getElementById('btn-menu-input'); 
-    if(btnInput) btnInput.style.display = 'none';
+    console.log("Admin Panel Dimuatkan. Tahun:", tahunAktif);
 
-    // Tukar nama tab Admin
+    // Kemaskini UI Navigasi
+    const btnInput = document.getElementById('btn-menu-input'); 
+    if(btnInput) btnInput.style.display = 'none'; // Sembunyi menu lama
+
     const btnUrus = document.getElementById('btn-menu-admin');
     if(btnUrus) btnUrus.innerHTML = '<i class="bi bi-pencil-square me-2"></i>Urus & Isi Keputusan';
     
-    // Papar Tahun
     const labelTahun = document.getElementById('tahun-label');
     if(labelTahun) labelTahun.innerText = `Tahun: ${tahunAktif}`;
-
-    console.log("Sistem Admin Sedia. Tahun:", tahunAktif);
 });
 
-// Logout
+// Listener Menu Sidebar
+document.getElementById('menu-setup')?.addEventListener('click', () => { renderSetupForm(); });
+document.getElementById('menu-acara')?.addEventListener('click', () => { renderSenaraiAcara('input'); });
 document.getElementById('btn-logout')?.addEventListener('click', () => {
-    if(confirm("Log keluar?")) {
-        sessionStorage.clear();
-        window.location.href = 'login.html';
-    }
-});
-
-// Sidebar Navigation
-document.getElementById('menu-setup')?.addEventListener('click', () => {
-    renderSetupForm();
-});
-
-document.getElementById('menu-acara')?.addEventListener('click', () => {
-    // Kita paksa mod 'input' di sini supaya admin boleh edit
-    renderSenaraiAcara('input'); 
+    if(confirm("Log keluar?")) { sessionStorage.clear(); window.location.href = 'login.html'; }
 });
 
 // ==============================================================================
-// 2. FUNGSI UTILITI (CSV, BACKUP, RESTORE, PADAM) - KEKAL SEPERTI ASAL
+// 2. FUNGSI SETUP & UTILITI (BACKUP / RESTORE / CSV / RUMAH)
 // ==============================================================================
+function renderSetupForm() {
+    contentArea.innerHTML = `
+        <div class="row g-4">
+            <div class="col-md-6">
+                <div class="card p-4 h-100 shadow-sm border-0">
+                    <h5 class="text-primary"><i class="bi bi-database me-2"></i>Setup Database</h5>
+                    <p class="text-muted small">Jana struktur awal untuk tahun ${tahunAktif}.</p>
+                    <button class="btn btn-primary mt-auto" id="btn-init">Jana Struktur</button>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card p-4 h-100 shadow-sm border-0">
+                    <h5 class="text-success"><i class="bi bi-shield-lock me-2"></i>Rumah Sukan</h5>
+                    <p class="text-muted small">Urus kata laluan rumah sukan.</p>
+                    <button class="btn btn-success mt-auto" onclick="renderSenaraiRumah()">Urus Kata Laluan</button>
+                </div>
+            </div>
+            <div class="col-md-12">
+                <div class="card p-4 shadow-sm border-0">
+                    <h5 class="text-dark mb-3"><i class="bi bi-hdd-network me-2"></i>Utiliti Data</h5>
+                    <div class="d-flex gap-2 flex-wrap">
+                        <button class="btn btn-outline-dark" id="btn-laksana-backup"><i class="bi bi-download me-2"></i>Backup JSON</button>
+                        <button class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#modalPadam"><i class="bi bi-trash me-2"></i>Padam Data</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div id="house-list" class="mt-4"></div>`;
 
-// CSV Upload
+    // Logic Butang Setup
+    document.getElementById('btn-init').onclick = async () => {
+        if(!confirm("Anda pasti mahu menjana database baru?")) return;
+        const res = await initializeTournament(tahunAktif, []);
+        alert(res.success ? "Berjaya!" : "Ralat: " + res.message);
+    };
+
+    // Logic Butang Backup
+    document.getElementById('btn-laksana-backup').onclick = async () => {
+        const btn = document.getElementById('btn-laksana-backup');
+        btn.disabled = true; btn.innerText = "Processing...";
+        try {
+            let data = {};
+            const collections = ["peserta", "rumah", "acara"];
+            for(let col of collections) {
+                data[col] = {};
+                const snap = await getDocs(collection(db, "kejohanan", tahunAktif, col));
+                snap.forEach(d => data[col][d.id] = d.data());
+            }
+            const url = URL.createObjectURL(new Blob([JSON.stringify(data)], {type: "application/json"}));
+            const a = document.createElement('a'); a.href=url; a.download=`BACKUP_${tahunAktif}.json`; a.click();
+            alert("Backup Selesai!");
+        } catch(e) { alert("Ralat Backup: "+e.message); }
+        finally { btn.disabled = false; btn.innerText = "Backup JSON"; }
+    };
+}
+
+// Fungsi CSV Upload (Diletakkan Global Listener)
 document.getElementById('btn-proses-csv')?.addEventListener('click', async () => {
-    const fileInput = document.getElementById('file-csv');
-    const btn = document.getElementById('btn-proses-csv');
-    if (!fileInput.files[0]) return alert("Pilih fail dahulu.");
-
-    btn.disabled = true; btn.innerText = 'Memproses...';
+    const input = document.getElementById('file-csv');
+    if(!input.files[0]) return alert("Pilih fail CSV dahulu.");
+    
     const reader = new FileReader();
     reader.onload = async (e) => {
         try {
             const lines = e.target.result.split('\n');
-            const records = [];
-            for (let i = 1; i < lines.length; i++) {
-                const [rekod, acara, kategori, thn, nama] = lines[i].split(',');
-                if (rekod && acara) records.push({ rekod: rekod.trim(), acara: acara.trim(), kategori: kategori.trim(), nama: nama?.trim()||'-' });
+            let records = [];
+            for(let i=1; i<lines.length; i++) {
+                const [rekod, acara, kat, thn, nama] = lines[i].split(',');
+                if(rekod && acara) records.push({rekod:rekod.trim(), acara:acara.trim(), kategori:kat.trim(), nama:nama?.trim()||'-'});
             }
             await saveBulkRecords(records);
             alert("Berjaya muat naik rekod!");
-            location.reload();
-        } catch(err) { alert("Ralat CSV: " + err.message); }
-        finally { btn.disabled = false; btn.innerText = "Mula Proses"; }
+        } catch(err) { alert("Ralat CSV: "+err.message); }
     };
-    reader.readAsText(fileInput.files[0]);
+    reader.readAsText(input.files[0]);
 });
 
-// Backup
-document.getElementById('btn-laksana-backup')?.addEventListener('click', async () => {
-    const btn = document.getElementById('btn-laksana-backup');
-    btn.disabled = true; btn.innerText = 'Backing up...';
-    try {
-        let backupData = {};
-        const cols = ["peserta", "rumah", "acara"];
-        for(let c of cols) {
-            backupData[c] = {};
-            const snap = await getDocs(collection(db, "kejohanan", tahunAktif, c));
-            snap.forEach(d => backupData[c][d.id] = d.data());
-        }
-        const blob = new Blob([JSON.stringify(backupData)], {type: "application/json"});
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a'); a.href=url; a.download=`BACKUP_${tahunAktif}.json`; a.click();
-        alert("Backup selesai.");
-    } catch(e) { alert("Ralat Backup: "+e.message); }
-    finally { btn.disabled = false; btn.innerText = "Laksana Backup"; }
-});
-
-// Restore
+// Fungsi Restore (Diletakkan Global Listener)
 document.getElementById('btn-laksana-restore')?.addEventListener('click', async () => {
-    const fileInput = document.getElementById('file-restore');
-    if(!fileInput.files[0]) return alert("Pilih fail JSON.");
-    if(!confirm("Data sedia ada akan diganti. Teruskan?")) return;
+    const input = document.getElementById('file-restore');
+    if(!input.files[0]) return alert("Pilih fail JSON dahulu.");
+    if(!confirm("AMARAN: Data sedia ada akan diganti!")) return;
 
     const reader = new FileReader();
     reader.onload = async (e) => {
@@ -147,139 +150,83 @@ document.getElementById('btn-laksana-restore')?.addEventListener('click', async 
             const data = JSON.parse(e.target.result);
             let batch = writeBatch(db);
             let count = 0;
-            // Logik restore ringkas (peserta, rumah, acara)
             for(let col in data) {
                 for(let id in data[col]) {
                     batch.set(doc(db, "kejohanan", tahunAktif, col, id), data[col][id], {merge:true});
                     count++;
-                    if(count>=450) { await batch.commit(); batch = writeBatch(db); count=0; }
+                    if(count>=400) { await batch.commit(); batch = writeBatch(db); count=0; }
                 }
             }
             if(count>0) await batch.commit();
-            alert("Restore selesai!");
+            alert("Restore Selesai!");
         } catch(err) { alert("Ralat Restore: "+err.message); }
     };
-    reader.readAsText(fileInput.files[0]);
+    reader.readAsText(input.files[0]);
 });
 
-// Padam Data
-document.getElementById('btn-laksana-padam')?.addEventListener('click', async () => {
-    const jenis = document.getElementById('select-padam-jenis').value;
-    const sah = document.getElementById('input-pengesahan-padam').value;
-    if(sah !== 'SAH PADAM') return;
-
-    if(!confirm("Anda pasti mahu memadam data ini?")) return;
-    
-    try {
-        const deleteCol = async (path) => {
-            const snap = await getDocs(path);
-            let batch = writeBatch(db);
-            let c = 0;
-            snap.forEach(d => { batch.delete(d.ref); c++; if(c>=450){batch.commit(); batch=writeBatch(db); c=0;} });
-            if(c>0) await batch.commit();
-        };
-
-        if(jenis === 'peserta' || jenis === 'semua') await deleteCol(collection(db, "kejohanan", tahunAktif, "peserta"));
-        if(jenis === 'keputusan' || jenis === 'semua') {
-            const evSnap = await getDocs(collection(db, "kejohanan", tahunAktif, "acara"));
-            for(let ev of evSnap.docs) await deleteCol(collection(db, "kejohanan", tahunAktif, "acara", ev.id, "saringan"));
-        }
-        if(jenis === 'semua') {
-            await deleteCol(collection(db, "kejohanan", tahunAktif, "acara"));
-            await deleteCol(collection(db, "kejohanan", tahunAktif, "rumah"));
-        }
-        alert("Data dipadam.");
-        location.reload();
-    } catch(e) { alert("Ralat Padam: "+e.message); }
-});
-
-// ==============================================================================
-// 3. SETUP & RUMAH SUKAN
-// ==============================================================================
-function renderSetupForm() {
-    contentArea.innerHTML = `
-        <div class="row g-4">
-            <div class="col-md-6"><div class="card p-4 h-100 shadow-sm">
-                <h4>Setup Awal</h4><p>Jana struktur DB tahun ${tahunAktif}.</p>
-                <button class="btn btn-primary" id="btn-init">Jana Struktur</button>
-            </div></div>
-            <div class="col-md-6"><div class="card p-4 h-100 shadow-sm">
-                <h4>Rumah Sukan</h4><p>Urus kata laluan.</p>
-                <button class="btn btn-success" onclick="renderSenaraiRumah()">Urus Rumah</button>
-            </div></div>
-        </div>
-        <div id="house-list" class="mt-4"></div>`;
-    
-    document.getElementById('btn-init').onclick = async () => {
-        if(!confirm("Jana database?")) return;
-        const res = await initializeTournament(tahunAktif, []);
-        alert(res.success ? "Berjaya." : res.message);
-    };
-}
-
+// Fungsi Urus Rumah Sukan
 window.renderSenaraiRumah = async () => {
-    const div = document.getElementById('house-list');
-    div.innerHTML = 'Loading...';
-    const rumah = ['merah','biru','hijau','kuning'];
-    let html = `<table class="table table-bordered bg-white"><tr><th>Rumah</th><th>Kod Akses</th><th>Tindakan</th></tr>`;
+    const container = document.getElementById('house-list');
+    container.innerHTML = 'Loading...';
+    const rumah = ['merah', 'biru', 'hijau', 'kuning'];
+    let html = `<div class="card"><div class="card-header bg-white fw-bold">Senarai Rumah Sukan</div>
+    <div class="table-responsive"><table class="table table-bordered mb-0"><tr><th>Rumah</th><th>Kod Laluan</th><th>Tindakan</th></tr>`;
+    
     for(let r of rumah) {
-        const d = await getDoc(doc(db, "kejohanan", tahunAktif, "rumah", r));
-        html += `<tr><td class="text-uppercase fw-bold">${r}</td>
-        <td><input id="kod-${r}" value="${d.exists()?d.data().kod||'':''}" class="form-control form-control-sm"></td>
-        <td><button class="btn btn-sm btn-dark" onclick="simpanKod('${r}')">Simpan</button></td></tr>`;
+        const snap = await getDoc(doc(db, "kejohanan", tahunAktif, "rumah", r));
+        const kod = snap.exists() ? snap.data().kod || '' : '';
+        html += `<tr><td class="text-uppercase fw-bold text-${r==='kuning'?'warning':r}">${r}</td>
+        <td><input id="kod-${r}" type="text" class="form-control form-control-sm" value="${kod}"></td>
+        <td><button class="btn btn-sm btn-dark" onclick="simpanKodRumah('${r}')">Simpan</button></td></tr>`;
     }
-    div.innerHTML = html + `</table>`;
+    container.innerHTML = html + `</table></div></div>`;
 };
 
-window.simpanKod = async (id) => {
-    const kod = document.getElementById(`kod-${id}`).value;
-    await setDoc(doc(db, "kejohanan", tahunAktif, "rumah", id), {kod:kod, nama:id.toUpperCase()}, {merge:true});
+window.simpanKodRumah = async (id) => {
+    const val = document.getElementById(`kod-${id}`).value;
+    await setDoc(doc(db, "kejohanan", tahunAktif, "rumah", id), {kod: val, nama: id.toUpperCase()}, {merge: true});
     alert("Disimpan.");
 };
 
 // ==============================================================================
-// 4. SENARAI ACARA (MOD INPUT DIPAKSA)
+// 3. SENARAI ACARA
 // ==============================================================================
 window.renderSenaraiAcara = async (modeAsal) => {
-    // PAKSA MOD INPUT (Supaya admin boleh edit)
+    // KITA PAKSA MOD INPUT AGAR ADMIN BOLEH EDIT
     const mode = 'input'; 
-
     contentArea.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary"></div><p>Memuatkan acara...</p></div>';
 
     try {
         let events = [];
-        const snapshot = await getDocs(collection(db, "kejohanan", tahunAktif, "acara"));
-        snapshot.forEach(doc => events.push({ id: doc.id, ...doc.data() }));
+        const snap = await getDocs(collection(db, "kejohanan", tahunAktif, "acara"));
+        snap.forEach(d => events.push({id: d.id, ...d.data()}));
 
-        // Asingkan Balapan vs Padang
+        // Asingkan Kategori
         const track = events.filter(e => e.kategori === 'balapan');
         const field = events.filter(e => e.kategori === 'padang');
 
-        const renderCard = (ev) => `
-            <div class="col-md-4 mb-3">
-                <div class="card h-100 shadow-sm border-0 hover-effect" onclick="pilihAcara('${ev.id}', '${ev.nama}', '${mode}')" style="cursor: pointer;">
-                    <div class="card-body">
-                        <span class="badge bg-${ev.status==='selesai'?'success':'secondary'} float-end">${ev.status||'Baru'}</span>
-                        <h6 class="fw-bold text-primary mb-1">${ev.nama}</h6>
-                        <small class="text-muted">${ev.kelas} | ${ev.jenis||'Akhir'}</small>
-                    </div>
-                    <div class="card-footer bg-light border-0 py-1 small text-primary">Klik untuk isi keputusan <i class="bi bi-arrow-right"></i></div>
+        const card = (ev) => `
+        <div class="col-md-4 mb-3">
+            <div class="card h-100 shadow-sm border-0 hover-effect" onclick="pilihAcara('${ev.id}', '${ev.nama}', '${mode}')" style="cursor:pointer">
+                <div class="card-body">
+                    <span class="badge bg-${ev.status==='selesai'?'success':'secondary'} float-end">${ev.status||'Baru'}</span>
+                    <h6 class="fw-bold text-primary">${ev.nama}</h6>
+                    <small class="text-muted">${ev.kelas} | ${ev.jenis||'Akhir'}</small>
                 </div>
-            </div>`;
+                <div class="card-footer bg-light border-0 py-1 small text-primary">Klik untuk urus <i class="bi bi-arrow-right"></i></div>
+            </div>
+        </div>`;
 
-        let html = `<h4 class="mb-4 border-bottom pb-2">Pengurusan Keputusan</h4>`;
-        
-        html += `<h5 class="text-success mt-3">Padang & Lompat Tinggi</h5><div class="row">${field.map(renderCard).join('') || '<p>Tiada data.</p>'}</div>`;
-        html += `<h5 class="text-danger mt-4">Balapan</h5><div class="row">${track.map(renderCard).join('') || '<p>Tiada data.</p>'}</div>`;
-
+        let html = `<h4 class="mb-3 border-bottom pb-2">Pengurusan Keputusan</h4>`;
+        html += `<h5 class="text-success mt-3">Padang & Lompat Tinggi</h5><div class="row">${field.map(card).join('')||'<p>Tiada data</p>'}</div>`;
+        html += `<h5 class="text-danger mt-4">Balapan</h5><div class="row">${track.map(card).join('')||'<p>Tiada data</p>'}</div>`;
         contentArea.innerHTML = html;
-    } catch (e) {
-        contentArea.innerHTML = `<div class="alert alert-danger">Ralat: ${e.message}</div>`;
-    }
+
+    } catch(e) { contentArea.innerHTML = `<div class="alert alert-danger">Ralat: ${e.message}</div>`; }
 };
 
 // ==============================================================================
-// 5. PILIH ACARA (Saringan List)
+// 4. PILIH SARINGAN
 // ==============================================================================
 window.pilihAcara = async (eventId, label, mode) => {
     contentArea.innerHTML = 'Loading...';
@@ -307,7 +254,7 @@ window.pilihAcara = async (eventId, label, mode) => {
         }
         contentArea.innerHTML = html;
 
-        // Logic Butang Jana
+        // Logic Butang Jana (Event Listener Manual)
         const btnJana = document.getElementById('btn-jana');
         if(btnJana) {
             btnJana.onclick = async () => {
@@ -320,7 +267,7 @@ window.pilihAcara = async (eventId, label, mode) => {
 };
 
 // ==============================================================================
-// 6. PAPARAN BORANG (RENDER FUNCTIONS)
+// 5. PAPARAN BORANG & INPUT (MODIFIKASI UTAMA)
 // ==============================================================================
 window.pilihSaringan = async (eventId, heatId, label, mode) => {
     contentArea.innerHTML = '<div class="text-center py-5"><div class="spinner-border"></div></div>';
@@ -344,7 +291,7 @@ window.pilihSaringan = async (eventId, heatId, label, mode) => {
         const isHighJump = nama.includes("LOMPAT TINGGI");
         const isField = (nama.includes("LOMPAT") || nama.includes("LONTAR") || nama.includes("REJAM") || nama.includes("LEMPAR")) && !isHighJump;
 
-        // Header
+        // Header Borang
         let html = `
             <div class="d-flex justify-content-between mb-3 d-print-none">
                 <button class="btn btn-sm btn-secondary" onclick="pilihAcara('${eventId}', '${label}', '${mode}')">Kembali</button>
@@ -359,7 +306,7 @@ window.pilihSaringan = async (eventId, heatId, label, mode) => {
             </div>
         `;
 
-        // Render Body - !isEditMode bermaksud readOnly=false (boleh edit)
+        // Render Body (!isEditMode bermaksud readOnly=false -> boleh edit)
         if(isHighJump) html += renderBorangLompatTinggi(data, !isEditMode);
         else if(isField) html += renderBorangPadang(data, !isEditMode);
         else html += renderBorangBalapan(data, !isEditMode);
@@ -368,6 +315,8 @@ window.pilihSaringan = async (eventId, heatId, label, mode) => {
 
     } catch(e) { contentArea.innerHTML = "Ralat Borang: " + e.message; }
 };
+
+// --- HELPER RENDERING ---
 
 // A. BALAPAN
 function renderBorangBalapan(h, readOnly) {
@@ -416,7 +365,7 @@ function renderBorangLompatTinggi(h, readOnly) {
     let t = ``;
     if(!readOnly) {
         t += `<div class="d-flex justify-content-between alert alert-info py-2 d-print-none align-items-center">
-            <small>Masukkan ketinggian palang dahulu.</small>
+            <small>Klik "Tambah Ketinggian" dahulu.</small>
             <button class="btn btn-sm btn-dark rounded-pill" id="btn-add-height"><i class="bi bi-plus"></i> Tambah Ketinggian</button>
         </div>`;
     }
@@ -455,46 +404,39 @@ function renderBorangLompatTinggi(h, readOnly) {
 }
 
 // ==============================================================================
-// 7. AGIHAN LORONG AUTO (KEKAL)
+// 6. FUNGSI AGIHAN LORONG AUTO
 // ==============================================================================
 window.agihLorongAuto = async (eventId, heatId, label, mode) => {
-    if(!confirm("Tarik peserta secara automatik?")) return;
+    if(!confirm("Tarik peserta secara automatik? Data sedia ada akan ditulis ganti.")) return;
     try {
         const evSnap = await getDoc(doc(db, "kejohanan", tahunAktif, "acara", eventId));
         if(!evSnap.exists()) return;
         const evData = evSnap.data();
         
-        // Cari peserta berdaftar
+        // Cari peserta
         const q = query(collection(db, "kejohanan", tahunAktif, "peserta"), where("kategori", "==", evData.kategori));
         const pSnap = await getDocs(q);
         
-        let validParticipants = [];
+        let valid = [];
         pSnap.forEach(d => {
             const p = d.data();
-            if(p.acara && p.acara[evData.nama]) validParticipants.push({id: d.id, ...p});
+            if(p.acara && p.acara[evData.nama]) valid.push({idPeserta: d.id, nama: p.nama, noBib: p.noBib||'-', idRumah: p.rumah||p.idRumah||'', lorong: 0, pencapaian: ''});
         });
 
-        if(validParticipants.length === 0) return alert("Tiada peserta mendaftar untuk acara ini.");
+        if(valid.length === 0) return alert("Tiada peserta mendaftar.");
+        
+        // Assign Lorong (Rawak/Urutan)
+        valid = valid.map((p,i) => ({...p, lorong: i+1}));
 
-        // Map format
-        const newList = validParticipants.map((p, idx) => ({
-            idPeserta: p.id,
-            nama: p.nama,
-            noBib: p.noBib||'-',
-            idRumah: p.rumah||p.idRumah||'',
-            lorong: idx + 1,
-            pencapaian: ''
-        }));
-
-        await updateDoc(doc(db, "kejohanan", tahunAktif, "acara", eventId, "saringan", heatId), { peserta: newList });
-        alert(`Berjaya tarik ${newList.length} peserta.`);
+        await updateDoc(doc(db, "kejohanan", tahunAktif, "acara", eventId, "saringan", heatId), { peserta: valid });
+        alert(`Berjaya tarik ${valid.length} peserta.`);
         pilihSaringan(eventId, heatId, label, mode);
 
     } catch(e) { alert("Ralat Auto: " + e.message); }
 };
 
 // ==============================================================================
-// 8. GLOBAL EVENT LISTENER (OTAK BUTANG) - PENTING!
+// 7. GLOBAL EVENT LISTENER (LOGIK BUTANG) - PENTING!
 // ==============================================================================
 document.addEventListener('click', async (e) => {
     
