@@ -963,7 +963,7 @@ window.pilihSaringan = async (eventId, heatId, labelAcara, mode) => {
             });
         }
 
-    } catch (error) {
+    } catch (e) {
         console.error("Ralat pilihSaringan:", error);
         contentArea.innerHTML = `<div class="alert alert-danger">Ralat: ${error.message}</div>`;
     }
@@ -1529,6 +1529,7 @@ window.agihanAuto = async (eventId, heatId, label, mode) => {
 document.addEventListener('DOMContentLoaded', () => {
     renderSetupForm();
 });
+
 
 
 
