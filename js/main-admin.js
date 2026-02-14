@@ -1154,42 +1154,60 @@ function renderBorangPadang(h, isReadOnly) {
 }
 
 // ==============================================================================
-// RENDER 3: LOMPAT TINGGI (HIGH JUMP) - GRID SYSTEM
+// RENDER 3: LOMPAT TINGGI (HIGH JUMP) - DINAMIK & KEMAS
 // ==============================================================================
 function renderBorangLompatTinggi(h, isReadOnly) {
     let allHeights = new Set();
     
-    // Kumpulkan ketinggian
+    // 1. Kumpulkan ketinggian yang SUDAH ADA dalam database (jika ada)
     if(h.peserta) {
         h.peserta.forEach(p => {
             if(p.rekodLompatan) Object.keys(p.rekodLompatan).forEach(ht => allHeights.add(ht));
         });
     }
-    
-    // Default heights jika kosong
-    if(allHeights.size === 0) {
-        ["1.00", "1.05", "1.10", "1.15", "1.20"].forEach(x => allHeights.add(x));
-    }
 
+    // Susun ketinggian ikut urutan (1.10, 1.15, ...)
     let sorted = Array.from(allHeights).sort((a,b) => parseFloat(a) - parseFloat(b));
+
+    // 2. LOGIK PENENTUAN KOLUM
+    // Jika tiada data lagi (Acara baru / Borang Kosong), kita buat 10 kolum KOSONG
+    // Supaya hakim boleh tulis tangan di kertas.
+    let cols = [];
+    let isEmptyForm = sorted.length === 0;
+
+    if (isEmptyForm) {
+        // Jana 10 kolum kosong untuk cetakan
+        cols = Array(10).fill(''); 
+    } else {
+        // Guna data yang ada
+        cols = sorted;
+    }
 
     let t = `
         ${isReadOnly ? '' : `
-        <div class="mb-2 d-flex justify-content-end d-print-none">
-            <button class="btn btn-sm btn-outline-dark rounded-pill" id="btn-add-height">
-                <i class="bi bi-plus-lg"></i> Tambah Ketinggian
+        <div class="mb-2 d-flex justify-content-between align-items-center d-print-none">
+            <small class="text-muted fst-italic">Untuk input, sila tambah ketinggian satu per satu.</small>
+            <button class="btn btn-sm btn-dark rounded-pill shadow-sm" id="btn-add-height">
+                <i class="bi bi-plus-lg text-success"></i> Tambah Ketinggian Baru
             </button>
         </div>
         `}
         <div class="table-responsive bg-white shadow-sm p-3 rounded">
-            <table class="table table-bordered text-center align-middle mb-0 table-sm">
+            <table class="table table-bordered text-center align-middle mb-0 table-sm border-dark">
                 <thead class="table-dark small">
                     <tr>
-                        <th width="50">No</th>
-                        <th width="80">Bib</th>
-                        <th class="text-start" style="min-width:150px;">Nama</th>
-                        ${sorted.map(ht => `<th style="min-width:50px;">${parseFloat(ht).toFixed(2)}m</th>`).join('')}
-                        <th width="80" class="bg-primary">Best</th>
+                        <th width="40">No</th>
+                        <th width="60">Bib</th>
+                        <th class="text-start" style="min-width: 250px;">Nama Peserta</th> 
+                        
+                        ${cols.map(ht => {
+                            // Kalau form kosong, header pun kosong (biar hakim tulis)
+                            // Kalau ada data, papar nilai ketinggian (cth: 1.10m)
+                            let headerLabel = isEmptyForm ? '' : `${parseFloat(ht).toFixed(2)}m`;
+                            return `<th style="min-width:45px; height: 30px;">${headerLabel}</th>`;
+                        }).join('')}
+
+                        <th width="80" class="bg-primary border-start border-light">Best</th>
                         <th width="60">Rank</th>
                     </tr>
                 </thead>
@@ -1197,9 +1215,9 @@ function renderBorangLompatTinggi(h, isReadOnly) {
     `;
 
     if (!h.peserta || h.peserta.length === 0) {
-        t += `<tr><td colspan="${5 + sorted.length}">Tiada peserta.</td></tr>`;
+        t += `<tr><td colspan="${5 + cols.length}">Tiada peserta.</td></tr>`;
     } else {
-        // Susun ikut bib atau nama (sebab HJ tak semestinya ikut lorong)
+        // Susun peserta ikut No Bib (Standard lompat tinggi)
         h.peserta.sort((a,b) => (a.noBib || '').localeCompare(b.noBib || ''));
 
         h.peserta.forEach((p, idx) => {
@@ -1207,29 +1225,39 @@ function renderBorangLompatTinggi(h, isReadOnly) {
                 <tr data-idx="${idx}">
                     <td>${idx + 1}</td>
                     <td class="fw-bold">${p.noBib || '-'}</td>
-                    <td class="text-start">
-                        <div class="fw-bold text-truncate" style="max-width:150px;">${p.nama}</div>
+                    
+                    <td class="text-start text-wrap py-2" style="line-height: 1.2;">
+                        <div class="fw-bold text-uppercase">${p.nama}</div>
+                        <small class="text-muted d-block mt-1">${p.sekolah || 'Rumah ' + (p.idRumah || '-')}</small>
                     </td>
-                    ${sorted.map(ht => {
+
+                    ${cols.map(ht => {
+                        // Jika form kosong (untuk cetak), papar kotak kosong sahaja
+                        if (isEmptyForm) {
+                            return `<td class="border-end"></td>`;
+                        }
+
+                        // Jika mod input
                         const val = p.rekodLompatan?.[ht] ? p.rekodLompatan[ht].join('') : '';
                         return `
                         <td class="p-0">
                             ${isReadOnly ? 
-                                `<div style="height:30px; line-height:30px;">${val}</div>` 
+                                `<div style="height:35px; line-height:35px; font-weight:bold;">${val}</div>` 
                                 : 
-                                `<input type="text" class="form-control form-control-sm border-0 text-center hj-input p-0" 
-                                    style="height:30px; letter-spacing:2px; text-transform:uppercase;"
+                                `<input type="text" class="form-control form-control-sm border-0 text-center hj-input p-0 fw-bold" 
+                                    style="height:35px; letter-spacing:2px; text-transform:uppercase; background-color: #f8f9fa;"
                                     data-ht="${ht}" value="${val}" maxlength="3">`
                             }
                         </td>`;
                     }).join('')}
                     
-                    <td class="bg-primary bg-opacity-10 p-1">
-                         ${isReadOnly ? p.pencapaian || '' : 
+                    <td class="bg-primary bg-opacity-10 p-1 border-start border-secondary fw-bold">
+                         ${isReadOnly ? (p.pencapaian || '') : 
                          `<input type="text" class="form-control form-control-sm text-center fw-bold res-input" data-idx="${idx}" value="${p.pencapaian||''}">`}
                     </td>
-                    <td class="p-1">
-                        ${isReadOnly ? p.kedudukan || '' : 
+                    
+                    <td class="p-1 fw-bold">
+                        ${isReadOnly ? (p.kedudukan || '') : 
                         `<input type="number" class="form-control form-control-sm text-center ked-input" data-idx="${idx}" value="${p.kedudukan > 0 ? p.kedudukan : ''}">`}
                     </td>
                 </tr>
@@ -1237,16 +1265,43 @@ function renderBorangLompatTinggi(h, isReadOnly) {
         });
     }
 
-    return t + `</tbody></table></div>` + (isReadOnly ? '' : `
+    t += `</tbody></table></div>`;
+
+    // BAHAGIAN BAWAH (PANDUAN & BUTANG)
+    if (!isReadOnly) {
+        // Mode INPUT: Ada butang simpan
+        t += `
         <div class="alert alert-light border mt-3 small d-print-none">
-            <i class="bi bi-keyboard"></i> <strong>Cara Isi:</strong> Taip 'O' (Lepas), 'X' (Gagal), '-' (Pass). Contoh: "XO" atau "XXO".
+            <i class="bi bi-info-circle-fill text-primary"></i> <strong>Panduan:</strong> Taip 'O' (Lepas), 'X' (Gagal), '-' (Pass).
         </div>
         <div class="d-grid mt-2">
-            <button class="btn btn-primary shadow-sm" id="btn-save-results">SIMPAN LOMPAT TINGGI</button>
+            <button class="btn btn-primary shadow-sm" id="btn-save-results">
+                <i class="bi bi-save me-2"></i>SIMPAN KEPUTUSAN
+            </button>
         </div>
-    `);
-}
+        `;
+    } else {
+        // Mode CETAK: Ada ruang tandatangan
+        if (isEmptyForm) {
+            t += `
+            <div class="mt-4 row d-print-flex">
+                <div class="col-6">
+                    <p class="mb-5">Tandatangan Hakim Ketua:</p>
+                    <div class="border-bottom border-dark w-75"></div>
+                    <p class="small mt-1">(Nama: ....................................................)</p>
+                </div>
+                <div class="col-6">
+                    <p class="mb-5">Tandatangan Refri:</p>
+                    <div class="border-bottom border-dark w-75"></div>
+                    <p class="small mt-1">(Nama: ....................................................)</p>
+                </div>
+            </div>
+            `;
+        }
+    }
 
+    return t;
+}
 // ==============================================================================
 // 11. LOGIK SIMPAN KEPUTUSAN BERGANTUNG PADA JENIS ACARA
 // ==============================================================================
@@ -1447,6 +1502,7 @@ window.agihanAuto = async (eventId, heatId, label, mode) => {
 document.addEventListener('DOMContentLoaded', () => {
     renderSetupForm();
 });
+
 
 
 
