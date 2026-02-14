@@ -13,7 +13,6 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
 
 // --- KONSTANTA SISTEM ---
-// Senarai kategori dan acara yang akan dijana secara automatik semasa setup
 export const KATEGORI = ["L7", "L8", "L9", "L10", "L11", "L12", "P7", "P8", "P9", "P10", "P11", "P12"];
 export const ACARA_BALAPAN = ["100m", "200m", "4x100m", "100m Berpagar", "4x200m"]; 
 export const ACARA_PADANG = ["Lompat Jauh", "Lontar Peluru"];
@@ -121,8 +120,8 @@ export async function getEventDetail(tahun, eventId) {
 }
 
 /**
- * 7. Initialize Kejohanan Tahun Baru (VERSI AUTO-GENERATE)
- * Menjana rumah sukan dan semua kombinasi Kategori x Acara secara automatik.
+ * 7. Initialize Kejohanan Tahun Baru (VERSI AUTO-GENERATE - DIKEMASKINI)
+ * Menjana rumah sukan dan acara SAHAJA. TIDAK menjana saringan.
  */
 export async function initializeTournament(tahun) { 
     console.log("Memulakan inisialisasi automatik untuk tahun:", tahun);
@@ -168,23 +167,19 @@ export async function initializeTournament(tahun) {
                     nama: namaAcara, 
                     kategori: kat,
                     tahun: tStr,
-                    status: "pendaftaran",
+                    status: "buka", // Status 'buka' bermaksud sedia terima pendaftaran
                     jenis: jenis,
                     tarikhDicipta: new Date()
                 });
 
-                // Cipta Saringan 1 secara default untuk setiap acara
-                const saringanRef = doc(db, "kejohanan", tStr, "acara", eventId, "saringan", "Saringan 1");
-                batch.set(saringanRef, { 
-                    peserta: [], 
-                    noSaringan: 1,
-                    status: "sedia"
-                });
+                // PEMBETULAN:
+                // Bahagian cipta "Saringan 1" telah DIPADAMKAN.
+                // Saringan hanya akan wujud bila Admin tekan butang "Jana Saringan" nanti.
             }
         }
 
         await batch.commit();
-        console.log("--- SETUP SELESAI: SEMUA ACARA TELAH DIJANA ---");
+        console.log("--- SETUP SELESAI: STRUKTUR DATA DIJANA (TANPA SARINGAN) ---");
         return { success: true };
     } catch (e) {
         console.error("RALAT SETUP:", e);
