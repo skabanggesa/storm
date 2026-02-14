@@ -1154,28 +1154,35 @@ function renderBorangPadang(h, isReadOnly) {
 }
 
 // ==============================================================================
-// RENDER 3: LOMPAT TINGGI (VERSI BERSIH & STABIL)
+// RENDER 3: LOMPAT TINGGI (VERSI FINAL & DIPERBETULKAN)
 // ==============================================================================
 function renderBorangLompatTinggi(h, isReadOnly) {
     let allHeights = new Set();
     
+    // 1. Kumpulkan ketinggian yang SUDAH ADA dalam database
     if(h.peserta) {
         h.peserta.forEach(p => {
             if(p.rekodLompatan) Object.keys(p.rekodLompatan).forEach(ht => allHeights.add(ht));
         });
     }
 
+    // Susun ketinggian ikut urutan (1.10, 1.15, ...)
     let sorted = Array.from(allHeights).sort((a,b) => parseFloat(a) - parseFloat(b));
     let cols = [];
-    
+    let isEmptyForm = false;
+
+    // LOGIK PENTING:
+    // Jika ReadOnly (Cetak) DAN tiada data, kita nak nampak kotak kosong hantu.
     if (isReadOnly && sorted.length === 0) {
-        cols = Array(10).fill('');
+        cols = Array(10).fill(''); 
+        isEmptyForm = true;
     } else {
-        cols = sorted;
+        cols = sorted; // Guna data sebenar (atau kosong jika tiada data dalam mod input)
     }
 
     let t = ``;
 
+    // Butang Tambah Ketinggian (Hanya Mod Input)
     if (!isReadOnly) {
         t += `
         <div class="alert alert-info py-2 small mb-2 d-flex justify-content-between align-items-center d-print-none">
@@ -1195,10 +1202,12 @@ function renderBorangLompatTinggi(h, isReadOnly) {
                         <th width="40">No</th>
                         <th width="60">Bib</th>
                         <th class="text-start" style="min-width: 200px;">Nama Peserta</th> 
+                        
                         ${cols.map(ht => {
                             let headerLabel = (ht === '') ? '' : parseFloat(ht).toFixed(2) + 'm';
                             return `<th style="min-width:50px; height: 30px;">${headerLabel}</th>`;
                         }).join('')}
+
                         <th width="80" class="bg-primary border-start border-light">Best</th>
                         <th width="60">Rank</th>
                     </tr>
@@ -1209,6 +1218,7 @@ function renderBorangLompatTinggi(h, isReadOnly) {
     if (!h.peserta || h.peserta.length === 0) {
         t += `<tr><td colspan="${5 + cols.length}">Tiada peserta.</td></tr>`;
     } else {
+        // Susun peserta ikut No Bib
         h.peserta.sort((a,b) => (a.noBib || '').localeCompare(b.noBib || ''));
 
         h.peserta.forEach((p, idx) => {
@@ -1223,15 +1233,19 @@ function renderBorangLompatTinggi(h, isReadOnly) {
                     </td>
 
                     ${cols.map(ht => {
+                        // Jika kolum hantu (untuk cetak sahaja)
                         if (ht === '') {
                             return `<td class="border-end"></td>`;
                         }
+
+                        // Jika kolum sebenar
                         const val = p.rekodLompatan?.[ht] ? p.rekodLompatan[ht].join('') : '';
                         
                         let cellContent = '';
                         if (isReadOnly) {
                              cellContent = `<div style="height:35px; line-height:35px; font-weight:bold;">${val}</div>`;
                         } else {
+                             // INPUT LOMPATAN (GRID)
                              cellContent = `<input type="text" class="form-control form-control-sm border-0 text-center hj-input p-0 fw-bold" 
                                     style="height:35px; letter-spacing:2px; text-transform:uppercase; background-color: #fff;"
                                     data-ht="${ht}" value="${val}" maxlength="3">`;
@@ -1254,20 +1268,6 @@ function renderBorangLompatTinggi(h, isReadOnly) {
         });
     }
 
-    t += `</tbody></table></div>`;
-
-    if (!isReadOnly) {
-        t += `
-        <div class="d-grid mt-3">
-            <button class="btn btn-primary shadow-sm py-2" id="btn-save-results">
-                <i class="bi bi-save me-2"></i>SIMPAN KEPUTUSAN
-            </button>
-        </div>
-        `;
-    }
-
-    return t;
-}
     t += `</tbody></table></div>`;
 
     // BAHAGIAN BAWAH (PANDUAN & BUTANG)
@@ -1305,6 +1305,7 @@ function renderBorangLompatTinggi(h, isReadOnly) {
 
     return t;
 }
+
 // ==============================================================================
 // 11. LOGIK SIMPAN KEPUTUSAN BERGANTUNG PADA JENIS ACARA
 // ==============================================================================
@@ -1505,6 +1506,7 @@ window.agihanAuto = async (eventId, heatId, label, mode) => {
 document.addEventListener('DOMContentLoaded', () => {
     renderSetupForm();
 });
+
 
 
 
