@@ -722,104 +722,122 @@ window.pilihAcara = async (eventId, label, mode) => {
     // Paparan Loading
     contentArea.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-info"></div><p>Memuatkan data...</p></div>';
     
-    // Dapatkan data saringan dari DB
-    const heats = await getHeatsData(tahunAktif, eventId);
-    
-    // Header HTML (Tajuk & Butang Kembali)
-    let htmlHeader = `
-        <div class="d-flex align-items-center mb-3 pb-2 border-bottom d-print-none">
-            <button class="btn btn-sm btn-light border me-3 shadow-sm" onclick="renderSenaraiAcara('${mode}')">
-                <i class="bi bi-arrow-left"></i> Kembali
-            </button>
-            <h5 class="mb-0 fw-bold text-primary">${label} <span class="text-muted fw-normal ms-2">(${tahunAktif})</span></h5>
-        </div>
-    `;
-
-    // --- LOGIK UTAMA: PAPAR BUTANG JIKA TIADA SARINGAN ---
-    let htmlContent = '';
-
-    if (heats.length === 0) {
-        // PAPARAN JIKA KOSONG -> TUNJUK BUTANG JANA
-        htmlContent = `
-            <div class="text-center py-5 border rounded bg-white shadow-sm mt-4">
-                <i class="bi bi-shuffle text-muted" style="font-size: 3rem;"></i>
-                <h4 class="mt-3 text-dark fw-bold">Belum Ada Saringan / Undian</h4>
-                <p class="text-muted">Peserta mungkin sudah mendaftar, tetapi lorong & giliran belum diundi.</p>
-                
-                <button id="btn-jana-saringan" class="btn btn-primary btn-lg px-5 rounded-pill shadow mt-3">
-                    <i class="bi bi-magic me-2"></i>Jana Saringan & Undi Lorong
+    try {
+        // Dapatkan data saringan dari DB
+        // (Pastikan fungsi getHeatsData sudah di-import dari modules/admin.js)
+        const heats = await getHeatsData(tahunAktif, eventId);
+        
+        // Header HTML (Tajuk & Butang Kembali)
+        let htmlHeader = `
+            <div class="d-flex align-items-center mb-3 pb-2 border-bottom d-print-none">
+                <button class="btn btn-sm btn-light border me-3 shadow-sm" onclick="renderSenaraiAcara('${mode}')">
+                    <i class="bi bi-arrow-left"></i> Kembali
                 </button>
+                <h5 class="mb-0 fw-bold text-primary">${label} <span class="text-muted fw-normal ms-2">(${tahunAktif})</span></h5>
             </div>
         `;
-    } else {
-        // PAPARAN JIKA SUDAH ADA DATA -> TUNJUK SENARAI (MACAM BIASA)
-        htmlContent += `
-            <div class="row mb-3 d-print-none">
-                <div class="col-12">
-                    <div class="alert alert-secondary py-2 small">
-                        <i class="bi bi-info-circle-fill me-2"></i>Sila pilih sesi di bawah.
+
+        // --- LOGIK UTAMA: PAPAR BUTANG JIKA TIADA SARINGAN ---
+        let htmlContent = '';
+
+        if (heats.length === 0) {
+            // PAPARAN JIKA KOSONG -> TUNJUK BUTANG JANA
+            htmlContent = `
+                <div class="text-center py-5 border rounded bg-white shadow-sm mt-4">
+                    <i class="bi bi-shuffle text-muted" style="font-size: 3rem;"></i>
+                    <h4 class="mt-3 text-dark fw-bold">Belum Ada Saringan / Undian</h4>
+                    <p class="text-muted">Peserta mungkin sudah mendaftar, tetapi lorong & giliran belum diundi.</p>
+                    
+                    <button id="btn-jana-saringan" class="btn btn-primary btn-lg px-5 rounded-pill shadow mt-3">
+                        <i class="bi bi-magic me-2"></i>Jana Saringan & Undi Lorong
+                    </button>
+                </div>
+            `;
+        } else {
+            // PAPARAN JIKA SUDAH ADA DATA -> TUNJUK SENARAI
+            htmlContent += `
+                <div class="row mb-3 d-print-none">
+                    <div class="col-12">
+                        <div class="alert alert-secondary py-2 small">
+                            <i class="bi bi-info-circle-fill me-2"></i>Sila pilih sesi di bawah.
+                        </div>
                     </div>
                 </div>
-            </div>
-            <div class="list-group shadow-sm border-0">
-        `;
-
-        // Susun saringan ikut nombor
-        heats.sort((a,b) => parseInt(a.noSaringan) - parseInt(b.noSaringan));
-
-        heats.forEach(h => {
-            const statusColor = h.status === 'selesai' ? 'success' : 'warning';
-            const statusText = h.status === 'selesai' ? 'Selesai' : 'Sedang Berlangsung';
-            
-            // Label Paparan: "Saringan 1" atau "ACARA AKHIR"
-            let labelPaparan = `Saringan ${h.noSaringan}`;
-            if (h.jenis === 'akhir') {
-                labelPaparan = "ACARA AKHIR";
-            }
-            
-            htmlContent += `
-                <button class="list-group-item list-group-item-action d-flex justify-content-between align-items-center p-3 border-start border-4 border-${statusColor}" 
-                        onclick="pilihSaringan('${eventId}', '${h.id}', '${label}', '${mode}')">
-                    <div>
-                        <span class="fw-bold fs-5">
-                            <i class="bi bi-flag-fill me-2 text-dark"></i>${labelPaparan}
-                        </span>
-                    </div>
-                    <span class="badge rounded-pill bg-${statusColor} ${statusColor==='warning'?'text-dark':''} p-2 d-print-none shadow-sm">
-                        ${statusText} <i class="bi bi-chevron-right ms-1"></i>
-                    </span>
-                </button>
+                <div class="list-group shadow-sm border-0">
             `;
-        });
-        htmlContent += `</div>`;
-    }
 
-    // Gabungkan Header + Content dan masukkan ke HTML
-    contentArea.innerHTML = htmlHeader + htmlContent;
+            // Susun saringan ikut nombor
+            heats.sort((a,b) => parseInt(a.noSaringan) - parseInt(b.noSaringan));
 
-    // --- LEKATKAN EVENT LISTENER PADA BUTANG JANA (JIKA WUJUD) ---
-    const btnJana = document.getElementById('btn-jana-saringan');
-    if (btnJana) {
-        btnJana.onclick = async () => {
-             if(confirm("Adakah anda pasti mahu menjana saringan? Proses ini akan mengundi lorong untuk semua peserta yang telah mendaftar.")) {
-                 // UI Loading pada butang
-                 btnJana.disabled = true;
-                 btnJana.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Memproses...';
-                 
-                 // PANGGIL FUNGSI DARI MODULE (admin.js)
-                 const res = await generateHeats(tahunAktif, eventId);
-                 
-                 if(res.success) {
-                     alert(res.message); // "10 peserta berjaya disusun..."
-                     pilihAcara(eventId, label, mode); // Refresh halaman ini
-                 } else {
-                     alert("Ralat: " + res.message);
-                     // Reset butang jika gagal
-                     btnJana.disabled = false;
-                     btnJana.innerHTML = '<i class="bi bi-arrow-clockwise me-2"></i>Cuba Lagi';
+            heats.forEach(h => {
+                const statusColor = h.status === 'selesai' ? 'success' : 'warning';
+                const statusText = h.status === 'selesai' ? 'Selesai' : 'Sedang Berlangsung';
+                
+                // Label Paparan: "Saringan 1" atau "ACARA AKHIR"
+                let labelPaparan = `Saringan ${h.noSaringan}`;
+                if (h.jenis === 'akhir') {
+                    labelPaparan = "ACARA AKHIR";
+                }
+                
+                // PENTING: Pastikan parameter 'mode' dihantar dengan betul di sini!
+                htmlContent += `
+                    <button class="list-group-item list-group-item-action d-flex justify-content-between align-items-center p-3 border-start border-4 border-${statusColor}" 
+                            onclick="pilihSaringan('${eventId}', '${h.id}', '${label}', '${mode}')">
+                        <div>
+                            <span class="fw-bold fs-5">
+                                <i class="bi bi-flag-fill me-2 text-dark"></i>${labelPaparan}
+                            </span>
+                            <div class="small text-muted mt-1">
+                                <i class="bi bi-people-fill me-1"></i> ${h.peserta ? h.peserta.length : 0} Peserta
+                            </div>
+                        </div>
+                        <span class="badge rounded-pill bg-${statusColor} ${statusColor==='warning'?'text-dark':''} p-2 d-print-none shadow-sm">
+                            ${statusText} <i class="bi bi-chevron-right ms-1"></i>
+                        </span>
+                    </button>
+                `;
+            });
+            htmlContent += `</div>`;
+        }
+
+        // Gabungkan Header + Content dan masukkan ke HTML
+        contentArea.innerHTML = htmlHeader + htmlContent;
+
+        // --- EVENT LISTENER UNTUK BUTANG JANA ---
+        const btnJana = document.getElementById('btn-jana-saringan');
+        if (btnJana) {
+            btnJana.addEventListener('click', async () => {
+                 if(confirm("Adakah anda pasti mahu menjana saringan? Proses ini akan mengundi lorong untuk semua peserta yang telah mendaftar.")) {
+                     // UI Loading pada butang
+                     btnJana.disabled = true;
+                     btnJana.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Memproses...';
+                     
+                     try {
+                         // Import fungsi secara dinamik jika belum ada
+                         const { generateHeats } = await import('./modules/admin.js');
+                         
+                         const res = await generateHeats(tahunAktif, eventId);
+                         
+                         if(res.success) {
+                             alert(res.message); 
+                             pilihAcara(eventId, label, mode); // Refresh halaman ini
+                         } else {
+                             alert("Ralat: " + res.message);
+                             btnJana.disabled = false;
+                             btnJana.innerHTML = '<i class="bi bi-arrow-clockwise me-2"></i>Cuba Lagi';
+                         }
+                     } catch (err) {
+                         console.error(err);
+                         alert("Ralat sistem semasa menjana saringan.");
+                         btnJana.disabled = false;
+                     }
                  }
-             }
-        };
+            });
+        }
+
+    } catch (error) {
+        console.error("Ralat pilihAcara:", error);
+        contentArea.innerHTML = `<div class="alert alert-danger">Ralat memuatkan acara: ${error.message}</div>`;
     }
 };
 
@@ -1494,6 +1512,7 @@ window.agihanAuto = async (eventId, heatId, label, mode) => {
 document.addEventListener('DOMContentLoaded', () => {
     renderSetupForm();
 });
+
 
 
 
