@@ -824,20 +824,23 @@ window.pilihAcara = async (eventId, label, mode) => {
 };
 
 // ==============================================================================
-// 10. PAPARKAN DATA SARINGAN (KOD DIKEMASKINI: BEZA ANTARA URUS & INPUT)
+// 10. PENGURUSAN PAPARAN SARINGAN & KEPUTUSAN (INTEGRATED)
 // ==============================================================================
+
+// Import senarai acara untuk rujukan jenis (Pastikan variable ini wujud/diimport)
+// Jika error, boleh hardcode array ini di sini sementara waktu:
+const LIST_ACARA_PADANG = ["Lompat Jauh", "Lontar Peluru", "Rejam Lembing", "Lempar Cakera", "Lompat Kijang"];
+const LIST_ACARA_KHAS = ["Lompat Tinggi"]; 
+
 window.pilihSaringan = async (eventId, heatId, labelAcara, mode) => {
     // 1. Paparan Loading
-    contentArea.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary"></div><p>Memuatkan data saringan...</p></div>';
+    contentArea.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary"></div><p>Memuatkan data borang...</p></div>';
 
     try {
-        // Tentukan adakah ini mod Input Data atau sekadar View/Cetak
-        // Mode 'input' datang dari menu "Input Keputusan"
-        // Mode 'urus' datang dari menu "Urus Acara"
-        const isEditMode = (mode === 'input'); 
-
-        // 2. Dapatkan Data Saringan
+        const isEditMode = (mode === 'input'); // True jika Input Keputusan, False jika Urus/Cetak
         const tStr = tahunAktif.toString();
+
+        // 2. Dapatkan Data
         const heatRef = doc(db, "kejohanan", tStr, "acara", eventId, "saringan", heatId);
         const heatSnap = await getDoc(heatRef);
 
@@ -847,18 +850,31 @@ window.pilihSaringan = async (eventId, heatId, labelAcara, mode) => {
         }
 
         const data = heatSnap.data();
-        const peserta = data.peserta || [];
+        // Simpan data dalam variable global untuk fungsi simpan nanti
+        window.currentHeatData = data; 
+        window.currentHeatId = heatId;
+        window.currentEventId = eventId;
+        window.currentLabel = labelAcara;
 
-        // Tentukan Tajuk (Saringan vs Akhir)
-        let tajukSaringan = `Saringan ${data.noSaringan}`;
-        let badgeJenis = `<span class="badge bg-secondary ms-2">Saringan</span>`;
-        if (data.jenis === 'akhir') {
-            tajukSaringan = "ACARA AKHIR";
-            badgeJenis = `<span class="badge bg-warning text-dark ms-2">AKHIR</span>`;
+        // 3. Tentukan Jenis Acara & Borang
+        // Bersihkan nama acara untuk pengecekan
+        const cleanName = labelAcara.replace(/L\d+|P\d+/g, '').trim(); // Buang L18/P15 dsb
+        
+        const isHighJump = LIST_ACARA_KHAS.some(x => labelAcara.includes(x));
+        const isField = LIST_ACARA_PADANG.some(x => labelAcara.includes(x));
+        const isFinal = (data.jenis === 'akhir');
+
+        // Tentukan Tajuk
+        let tajukKecil = `Saringan ${data.noSaringan}`;
+        let badge = `<span class="badge bg-secondary ms-2">Saringan</span>`;
+        
+        if (isFinal) {
+            tajukKecil = "ACARA AKHIR";
+            badge = `<span class="badge bg-warning text-dark ms-2">AKHIR</span>`;
         }
 
-        // 3. Header HTML
-        let html = `
+        // 4. HEADER (Sama untuk semua)
+        let htmlHeader = `
             <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-2 d-print-none">
                 <div>
                     <button class="btn btn-sm btn-outline-secondary me-2" onclick="pilihAcara('${eventId}', '${labelAcara}', '${mode}')">
@@ -867,7 +883,7 @@ window.pilihSaringan = async (eventId, heatId, labelAcara, mode) => {
                     <h5 class="d-inline-block fw-bold text-primary mb-0">${labelAcara}</h5>
                 </div>
                 <div>
-                    ${badgeJenis}
+                    ${badge}
                     <button class="btn btn-sm btn-success ms-2" onclick="window.print()">
                         <i class="bi bi-printer"></i> Cetak Borang
                     </button>
@@ -876,188 +892,174 @@ window.pilihSaringan = async (eventId, heatId, labelAcara, mode) => {
 
             <div class="text-center mb-4">
                 <h3 class="fw-bold text-uppercase">${labelAcara}</h3>
-                <h4 class="fw-bold text-dark bg-light py-2 border border-dark rounded">${tajukSaringan}</h4>
-                ${!isEditMode ? '<p class="small text-muted d-print-none">(Mod Cetakan: Input dikunci)</p>' : ''}
+                <h4 class="fw-bold text-dark bg-light py-2 border border-dark rounded d-inline-block px-5">${tajukKecil}</h4>
+                ${!isEditMode ? '<p class="small text-muted d-print-none mt-2">(Mod Cetakan: Input dikunci)</p>' : ''}
             </div>
         `;
 
-        // 4. Jadual Peserta
-        if (peserta.length === 0) {
-            html += `<div class="alert alert-warning text-center">Tiada peserta dalam saringan ini.</div>`;
+        // 5. BODY (Pilih ikut jenis acara)
+        let htmlBody = '';
+        
+        // --- LOGIK PEMILIHAN BORANG ---
+        if (isHighJump) {
+            htmlBody = renderBorangLompatTinggi(data, !isEditMode);
+        } else if (isField) {
+            htmlBody = renderBorangPadang(data, !isEditMode);
         } else {
-            // Susun peserta ikut lorong
-            peserta.sort((a, b) => a.lorong - b.lorong);
-
-            html += `
-            <div class="table-responsive">
-                <table class="table table-bordered align-middle">
-                    <thead class="table-dark text-center">
-                        <tr>
-                            <th style="width: 80px;">Lorong</th>
-                            <th style="width: 100px;">No. Bib</th>
-                            <th>Nama Peserta</th>
-                            <th>Pasukan</th>
-                            <th style="width: 150px;">Keputusan</th> <th style="width: 100px;">Kedudukan</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-            `;
-
-            peserta.forEach((p, index) => {
-                const nilaiMasa = p.pencapaian || ""; 
-                const nilaiKedudukan = p.kedudukan || "";
-                
-                // Logic Paparan Input vs Teks Biasa
-                let inputMasa, inputKedudukan;
-
-                if (isEditMode) {
-                    // MOD INPUT KEPUTUSAN: Papar Kotak Input
-                    inputMasa = `
-                        <input type="text" class="form-control text-center fw-bold" 
-                            value="${nilaiMasa}" placeholder="--.--"
-                            onchange="kemaskiniDataTempatan('${index}', 'pencapaian', this.value)">
-                    `;
-                    inputKedudukan = `
-                        <input type="number" class="form-control text-center fw-bold" 
-                            value="${nilaiKedudukan > 0 ? nilaiKedudukan : ''}" min="0" max="20"
-                            onchange="kemaskiniDataTempatan('${index}', 'kedudukan', this.value)">
-                    `;
-                } else {
-                    // MOD URUS / CETAK: Papar Garisan Kosong (Untuk tulis tangan) atau Nilai sedia ada
-                    // Jika belum ada keputusan, papar garisan _____ untuk hakim tulis
-                    const displayMasa = nilaiMasa || "__________"; 
-                    const displayKed = nilaiKedudukan || "___";
-                    
-                    inputMasa = `<div class="text-center py-2 text-muted">${displayMasa}</div>`;
-                    inputKedudukan = `<div class="text-center py-2 text-muted">${displayKed}</div>`;
-                }
-
-                html += `
-                    <tr>
-                        <td class="text-center fw-bold fs-5">${p.lorong}</td>
-                        <td class="text-center">${p.noBib || '-'}</td>
-                        <td>
-                            <div class="fw-bold">${p.nama}</div>
-                            <small class="text-muted d-block">${p.sekolah || ''}</small>
-                        </td>
-                        <td class="text-center">${p.idRumah ? p.idRumah.toUpperCase() : '-'}</td>
-                        <td>${inputMasa}</td>
-                        <td>${inputKedudukan}</td>
-                    </tr>
-                `;
-            });
-
-            html += `
-                    </tbody>
-                </table>
-            </div>
-            `;
-
-            // Butang Simpan HANYA muncul jika mode === 'input'
-            if (isEditMode) {
-                html += `
-                <div class="d-flex justify-content-end mt-4 d-print-none">
-                    <button id="btn-simpan-result" class="btn btn-primary btn-lg shadow" onclick="simpanKeputusanSaringan('${eventId}', '${heatId}', '${labelAcara}')">
-                        <i class="bi bi-save me-2"></i> Simpan Keputusan
-                    </button>
-                </div>
-                `;
-            } else {
-                html += `
-                <div class="alert alert-info d-print-none mt-3">
-                    <i class="bi bi-info-circle me-2"></i>
-                    Ini adalah paparan cetakan. Untuk memasukkan keputusan, sila pergi ke menu <b>3. Input Keputusan</b>.
-                </div>
-                `;
-            }
+            htmlBody = renderBorangBalapan(data, !isEditMode);
         }
 
-        contentArea.innerHTML = html;
-        window.currentPesertaData = peserta;
+        contentArea.innerHTML = htmlHeader + htmlBody;
+
+        // 6. EVENT LISTENERS (Untuk Butang Simpan)
+        // Kita pasang listener secara manual sebab HTML string susah nak pass object
+        const btnSimpan = document.getElementById('btn-save-results');
+        if (btnSimpan) {
+            btnSimpan.addEventListener('click', () => {
+                simpanKeputusanUmum(eventId, heatId, labelAcara);
+            });
+        }
+        
+        // Listener Khas untuk butang tambah aras (High Jump)
+        const btnAddHeight = document.getElementById('btn-add-height');
+        if (btnAddHeight) {
+            btnAddHeight.addEventListener('click', () => {
+                const height = prompt("Masukkan ketinggian baru (meter):", "1.xx");
+                if (height && !isNaN(height)) {
+                    // Tambah key kosong pada semua peserta
+                    window.currentHeatData.peserta.forEach(p => {
+                        if (!p.rekodLompatan) p.rekodLompatan = {};
+                        if (!p.rekodLompatan[height]) p.rekodLompatan[height] = [];
+                    });
+                    // Refresh paparan
+                    // (Secara ideal simpan ke DB dulu, tapi untuk UI pantas kita refresh HTML)
+                    const newBody = renderBorangLompatTinggi(window.currentHeatData, false);
+                    // Cari div body dan ganti (cara malas: panggil pilihSaringan semula)
+                    simpanKeputusanUmum(eventId, heatId, labelAcara, true); // Simpan & Refresh
+                }
+            });
+        }
 
     } catch (error) {
-        console.error("Ralat papar saringan:", error);
+        console.error("Ralat pilihSaringan:", error);
         contentArea.innerHTML = `<div class="alert alert-danger">Ralat: ${error.message}</div>`;
     }
 };
 
-// Fungsi bantuan untuk kemaskini array sementara (supaya tidak perlu query DB setiap kali taip)
-window.kemaskiniDataTempatan = (index, field, value) => {
-    if (window.currentPesertaData && window.currentPesertaData[index]) {
-        window.currentPesertaData[index][field] = value;
+// ==============================================================================
+// FUNGSI SIMPAN (SATU UNTUK SEMUA)
+// ==============================================================================
+window.simpanKeputusanUmum = async (eventId, heatId, label, silent = false) => {
+    const btn = document.getElementById('btn-save-results');
+    if(btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Menyimpan...';
     }
-};
-
-// Fungsi Simpan ke Database
-window.simpanKeputusanSaringan = async (eventId, heatId, labelAcara) => {
-    const btn = document.getElementById('btn-simpan-result');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Menyimpan...';
 
     try {
+        // Kumpul data dari input field ke dalam object window.currentHeatData
+        
+        // 1. INPUT BIASA (Masa/Jarak & Kedudukan)
+        const inputsRes = document.querySelectorAll('.res-input');
+        inputsRes.forEach(el => {
+            const idx = el.getAttribute('data-idx');
+            window.currentHeatData.peserta[idx].pencapaian = el.value;
+        });
+
+        const inputsKed = document.querySelectorAll('.ked-input'); // Pastikan tambah class ked-input di render functions
+        // Nota: Dalam render function di bawah saya akan tambah class ked-input
+        
+        // 2. INPUT ACARA PADANG (Percubaan)
+        const inputsTrial = document.querySelectorAll('.trial-input');
+        inputsTrial.forEach(el => {
+            // structure: tr inside row data-idx
+            const tr = el.closest('tr');
+            const idx = tr.getAttribute('data-idx');
+            const trialIdx = el.getAttribute('data-trial');
+            
+            if(!window.currentHeatData.peserta[idx].percubaan) window.currentHeatData.peserta[idx].percubaan = [];
+            window.currentHeatData.peserta[idx].percubaan[trialIdx] = el.value;
+        });
+
+        // 3. INPUT LOMPAT TINGGI (Grid)
+        const inputsHJ = document.querySelectorAll('.hj-input');
+        inputsHJ.forEach(el => {
+            const tr = el.closest('tr');
+            const idx = tr.getAttribute('data-idx');
+            const ht = el.getAttribute('data-ht');
+            const val = el.value.toUpperCase(); // O, X, -
+            
+            if(!window.currentHeatData.peserta[idx].rekodLompatan) window.currentHeatData.peserta[idx].rekodLompatan = {};
+            // Split string to array (cth: "XXO" -> ["X","X","O"])
+            window.currentHeatData.peserta[idx].rekodLompatan[ht] = val.split('');
+        });
+
+        // Hantar ke Database
         const { saveHeatResults } = await import('./modules/admin.js');
-        const res = await saveHeatResults(tahunAktif, eventId, heatId, window.currentPesertaData);
+        const res = await saveHeatResults(tahunAktif, eventId, heatId, window.currentHeatData.peserta);
 
         if (res.success) {
-            alert("Keputusan berjaya disimpan!");
-            pilihSaringan(eventId, heatId, labelAcara, 'input'); // Refresh page
+            if(!silent) alert("Data berjaya disimpan!");
+            pilihSaringan(eventId, heatId, label, 'input'); // Refresh
         } else {
-            alert("Gagal menyimpan: " + res.message);
-            btn.disabled = false;
-            btn.innerHTML = '<i class="bi bi-save me-2"></i> Simpan Keputusan';
+            alert("Gagal simpan: " + res.message);
+            if(btn) btn.disabled = false;
         }
+
     } catch (e) {
         console.error(e);
-        alert("Ralat sistem.");
-        btn.disabled = false;
+        alert("Ralat sistem semasa menyimpan.");
+        if(btn) btn.disabled = false;
     }
 };
 
-// ------------------------------------------------------------------------------
-// RENDER HTML: ACARA BALAPAN
-// ------------------------------------------------------------------------------
+// ==============================================================================
+// RENDER 1: BALAPAN (TRACK)
+// ==============================================================================
 function renderBorangBalapan(h, isReadOnly) {
     let t = `
-        <div class="table-responsive bg-white shadow-sm p-3 rounded" style="border:1px solid #ddd;">
-            <table class="table table-bordered table-hover align-middle mb-0" id="table-balapan">
+        <div class="table-responsive bg-white shadow-sm p-3 rounded">
+            <table class="table table-bordered table-hover align-middle mb-0">
                 <thead class="table-dark text-center">
                     <tr>
                         <th width="80" class="py-3">Lorong</th>
-                        <th width="120" class="py-3">No. Bip</th>
-                        <th class="text-start py-3">Nama Atlet / Maklumat Rumah</th>
-                        <th width="200" class="py-3">Keputusan Masa (s)</th>
+                        <th width="100" class="py-3">No. Bib</th>
+                        <th class="text-start py-3">Nama Peserta</th>
+                        <th width="200" class="py-3">Masa / Keputusan</th>
+                        <th width="100" class="py-3">Kedudukan</th>
                     </tr>
                 </thead>
                 <tbody>
     `;
-        
+       
     if (!h.peserta || h.peserta.length === 0) {
-        t += `<tr><td colspan="4" class="text-center py-5 text-danger fw-bold"><i class="bi bi-exclamation-triangle me-2"></i>Tiada peserta berdaftar dalam saringan ini. Sila tarik data.</td></tr>`;
+        t += `<tr><td colspan="5" class="text-center py-5 text-danger">Tiada peserta.</td></tr>`;
     } else {
+        h.peserta.sort((a,b) => a.lorong - b.lorong);
+        
         h.peserta.forEach((p, idx) => {
-            const bipDisplay = p.noBip || p.noBib || '-';
             t += `
                 <tr>
-                    <td class="text-center fs-5 fw-bold bg-light">${p.lorong || (idx + 1)}</td>
-                    <td class="text-center fs-5 text-secondary fw-bold border-end border-2">${bipDisplay}</td>
+                    <td class="text-center fs-5 fw-bold bg-light">${p.lorong}</td>
+                    <td class="text-center fw-bold text-secondary">${p.noBib || '-'}</td>
                     <td>
-                        <div class="fw-bold text-dark fs-6">${p.nama.toUpperCase()}</div>
-                        <div class="small text-muted text-uppercase d-flex align-items-center mt-1">
-                            <i class="bi bi-house-door-fill me-1"></i> RUMAH ${p.idRumah || p.rumah || 'TIADA'}
-                        </div>
+                        <div class="fw-bold">${p.nama}</div>
+                        <div class="small text-muted">Rumah ${p.idRumah || '-'}</div>
                     </td>
-                    <td class="p-3">
+                    <td class="p-2">
                         ${isReadOnly ? 
-                            '<div style="border-bottom: 2px dashed #999; height: 35px; margin-top:5px; width:100%;"></div>' 
+                            `<div class="text-center text-muted py-2" style="border-bottom:1px dashed #ccc;">${p.pencapaian || ''}</div>` 
                             : 
-                            `<div class="input-group">
-                                <input type="number" step="0.01" class="form-control form-control-lg text-center res-input text-primary fw-bold" 
-                                       data-idx="${idx}" 
-                                       value="${p.pencapaian || ''}" 
-                                       placeholder="00.00" 
-                                       style="background-color: #f8f9fa;">
-                                <span class="input-group-text bg-white text-muted">s</span>
-                            </div>`
+                            `<input type="text" class="form-control text-center fw-bold res-input" 
+                                data-idx="${idx}" value="${p.pencapaian || ''}" placeholder="--.--">`
+                        }
+                    </td>
+                    <td class="p-2">
+                         ${isReadOnly ? 
+                            `<div class="text-center text-muted py-2" style="border-bottom:1px dashed #ccc;">${p.kedudukan || ''}</div>` 
+                            : 
+                            `<input type="number" class="form-control text-center fw-bold ked-input" 
+                                data-idx="${idx}" value="${p.kedudukan > 0 ? p.kedudukan : ''}" min="0">`
                         }
                     </td>
                 </tr>
@@ -1066,58 +1068,79 @@ function renderBorangBalapan(h, isReadOnly) {
     }
     return t + `</tbody></table></div>` + (isReadOnly ? '' : `
         <div class="d-grid mt-4">
-            <button class="btn btn-primary btn-lg py-3 fw-bold shadow-sm rounded-pill" id="btn-save-results">
-                <i class="bi bi-cloud-arrow-up-fill me-2"></i>SIMPAN KEPUTUSAN RASMI
-            </button>
+            <button class="btn btn-primary btn-lg shadow-sm" id="btn-save-results"><i class="bi bi-save me-2"></i>SIMPAN KEPUTUSAN</button>
         </div>
     `);
 }
 
-// ------------------------------------------------------------------------------
-// RENDER HTML: ACARA PADANG (Lompat Jauh, Lontar Peluru, dll)
-// ------------------------------------------------------------------------------
+// ==============================================================================
+// RENDER 2: PADANG (FIELD) - LOMPAT JAUH, LONTAR PELURU, DLL
+// ==============================================================================
 function renderBorangPadang(h, isReadOnly) {
     let t = `
-        <div class="table-responsive bg-white shadow-sm p-3 rounded" style="border:1px solid #ddd;">
+        <div class="table-responsive bg-white shadow-sm p-3 rounded">
             <table class="table table-bordered table-hover text-center align-middle mb-0">
                 <thead class="table-dark">
                     <tr>
-                        <th width="100" class="py-3">No. Bip</th>
-                        <th class="text-start py-3">Atlet / Rumah</th>
-                        <th width="100" class="py-3 bg-secondary">T 1 (m)</th>
-                        <th width="100" class="py-3 bg-secondary">T 2 (m)</th>
-                        <th width="100" class="py-3 bg-secondary">T 3 (m)</th>
-                        <th width="150" class="py-3 bg-primary">Terbaik (m)</th>
+                        <th width="80">Giliran</th>
+                        <th width="100">Bib</th>
+                        <th class="text-start">Nama</th>
+                        <th>Cb 1</th> <th>Cb 2</th> <th>Cb 3</th>
+                        ${h.jenis==='akhir' ? '<th>Cb 4</th><th>Cb 5</th><th>Cb 6</th>' : ''}
+                        <th class="bg-primary bg-opacity-75">Terbaik</th>
+                        <th width="80">Ked</th>
                     </tr>
                 </thead>
                 <tbody>
     `;
     
+    // Default 3 cubaan, kalau akhir 6 cubaan (boleh adjust ikut peraturan sekolah)
+    const numTrials = h.jenis === 'akhir' ? 6 : 3;
+    const trialsArr = Array.from({length: numTrials}, (_, i) => i);
+
     if (!h.peserta || h.peserta.length === 0) {
-        t += `<tr><td colspan="6" class="text-center py-5 text-danger fw-bold">Tiada peserta. Klik butang 'Tarik Data'.</td></tr>`;
+        t += `<tr><td colspan="${5 + numTrials}" class="text-center py-5">Tiada peserta.</td></tr>`;
     } else {
+        // Susun ikut giliran (guna lorong field as giliran)
+        h.peserta.sort((a,b) => a.lorong - b.lorong);
+
         h.peserta.forEach((p, idx) => {
-            const bipDisplay = p.noBip || p.noBib || '-';
-            const tr = p.percubaan || ['', '', ''];
+            const tr = p.percubaan || [];
             
             t += `
                 <tr data-idx="${idx}">
-                    <td class="text-center fw-bold fs-5 text-secondary border-end border-2">${bipDisplay}</td>
+                    <td class="fw-bold bg-light">${p.lorong}</td>
+                    <td class="fw-bold text-secondary">${p.noBib || '-'}</td>
                     <td class="text-start">
-                        <div class="fw-bold text-dark fs-6">${p.nama.toUpperCase()}</div>
-                        <div class="small text-muted text-uppercase mt-1">RUMAH ${p.idRumah || p.rumah || ''}</div>
+                        <div class="fw-bold text-truncate" style="max-width:180px;">${p.nama}</div>
+                        <small class="text-muted">Rumah ${p.idRumah || '-'}</small>
                     </td>
-                    ${[0,1,2].map(i => `
-                        <td class="bg-light">
-                            ${isReadOnly ? 
-                                '<div style="border-bottom: 2px dashed #999; height:35px;"></div>' 
+                    ${trialsArr.map(i => `
+                        <td class="p-1">
+                             ${isReadOnly ? 
+                                `<div style="height:30px; border-bottom:1px dashed #ccc;"></div>` 
                                 : 
-                                `<input type="number" step="0.01" class="form-control text-center trial-input" data-trial="${i}" value="${tr[i] || ''}">`
+                                `<input type="number" step="0.01" class="form-control text-center p-1 trial-input" 
+                                    data-trial="${i}" value="${tr[i] || ''}">`
                             }
                         </td>
                     `).join('')}
-                    <td class="fw-bold fs-4 text-primary bg-primary bg-opacity-10 align-middle">
-                        ${p.pencapaian ? parseFloat(p.pencapaian).toFixed(2) : '-.--'}
+                    
+                    <td class="p-1 bg-primary bg-opacity-10">
+                        ${isReadOnly ? 
+                            p.pencapaian || '' 
+                            : 
+                            `<input type="number" step="0.01" class="form-control text-center fw-bold res-input" 
+                                data-idx="${idx}" value="${p.pencapaian || ''}">`
+                        }
+                    </td>
+                    <td class="p-1">
+                        ${isReadOnly ? 
+                            p.kedudukan || '' 
+                            : 
+                            `<input type="number" class="form-control text-center fw-bold ked-input" 
+                                data-idx="${idx}" value="${p.kedudukan > 0 ? p.kedudukan : ''}">`
+                        }
                     </td>
                 </tr>
             `;
@@ -1125,90 +1148,101 @@ function renderBorangPadang(h, isReadOnly) {
     }
     return t + `</tbody></table></div>` + (isReadOnly ? '' : `
         <div class="d-grid mt-4">
-            <button class="btn btn-primary btn-lg py-3 fw-bold shadow-sm rounded-pill" id="btn-save-results">
-                <i class="bi bi-save2-fill me-2"></i>SIMPAN KEPUTUSAN PADANG
-            </button>
+            <button class="btn btn-primary btn-lg shadow-sm" id="btn-save-results"><i class="bi bi-save me-2"></i>SIMPAN KEPUTUSAN PADANG</button>
         </div>
     `);
 }
 
-// ------------------------------------------------------------------------------
-// RENDER HTML: LOMPAT TINGGI (Dinamik Columns)
-// ------------------------------------------------------------------------------
+// ==============================================================================
+// RENDER 3: LOMPAT TINGGI (HIGH JUMP) - GRID SYSTEM
+// ==============================================================================
 function renderBorangLompatTinggi(h, isReadOnly) {
     let allHeights = new Set();
     
-    // Kumpulkan semua aras ketinggian yang pernah direkodkan untuk peserta ini
-    h.peserta.forEach(p => {
-        if(p.rekodLompatan) Object.keys(p.rekodLompatan).forEach(ht => allHeights.add(ht));
-    });
+    // Kumpulkan ketinggian
+    if(h.peserta) {
+        h.peserta.forEach(p => {
+            if(p.rekodLompatan) Object.keys(p.rekodLompatan).forEach(ht => allHeights.add(ht));
+        });
+    }
     
-    // Susun secara menaik
+    // Default heights jika kosong
+    if(allHeights.size === 0) {
+        ["1.00", "1.05", "1.10", "1.15", "1.20"].forEach(x => allHeights.add(x));
+    }
+
     let sorted = Array.from(allHeights).sort((a,b) => parseFloat(a) - parseFloat(b));
 
     let t = `
         ${isReadOnly ? '' : `
-        <div class="mb-3 d-flex justify-content-end d-print-none">
-            <button class="btn btn-outline-dark fw-bold rounded-pill shadow-sm" id="btn-add-height">
-                <i class="bi bi-plus-circle-fill me-1 text-success"></i> Tambah Aras Lompatan Baru
+        <div class="mb-2 d-flex justify-content-end d-print-none">
+            <button class="btn btn-sm btn-outline-dark rounded-pill" id="btn-add-height">
+                <i class="bi bi-plus-lg"></i> Tambah Ketinggian
             </button>
         </div>
         `}
-        <div class="table-responsive bg-white shadow-sm p-3 rounded" style="border:1px solid #ddd;">
-            <table class="table table-bordered text-center align-middle mb-0" id="high-jump-table">
-                <thead class="table-dark">
+        <div class="table-responsive bg-white shadow-sm p-3 rounded">
+            <table class="table table-bordered text-center align-middle mb-0 table-sm">
+                <thead class="table-dark small">
                     <tr>
-                        <th width="100" class="py-3">No. Bip</th>
-                        <th class="text-start py-3" style="min-width: 250px;">Atlet / Rumah</th>
-                        ${sorted.map(ht => `<th class="py-3 bg-secondary" style="min-width: 60px;">${parseFloat(ht).toFixed(2)}m</th>`).join('')}
-                        <th width="120" class="py-3 bg-primary">Terbaik</th>
+                        <th width="50">No</th>
+                        <th width="80">Bib</th>
+                        <th class="text-start" style="min-width:150px;">Nama</th>
+                        ${sorted.map(ht => `<th style="min-width:50px;">${parseFloat(ht).toFixed(2)}m</th>`).join('')}
+                        <th width="80" class="bg-primary">Best</th>
+                        <th width="60">Rank</th>
                     </tr>
                 </thead>
                 <tbody>
     `;
-    
+
     if (!h.peserta || h.peserta.length === 0) {
-        t += `<tr><td colspan="${sorted.length + 3}" class="text-center py-5 text-danger fw-bold">Tiada peserta. Klik 'Tarik Data'.</td></tr>`;
+        t += `<tr><td colspan="${5 + sorted.length}">Tiada peserta.</td></tr>`;
     } else {
+        // Susun ikut bib atau nama (sebab HJ tak semestinya ikut lorong)
+        h.peserta.sort((a,b) => (a.noBib || '').localeCompare(b.noBib || ''));
+
         h.peserta.forEach((p, idx) => {
-            const bipDisplay = p.noBip || p.noBib || '-';
             t += `
                 <tr data-idx="${idx}">
-                    <td class="fw-bold fs-5 text-secondary border-end border-2">${bipDisplay}</td>
-                    <td class="text-start border-end border-2">
-                        <div class="fw-bold text-dark fs-6 text-truncate" style="max-width: 200px;" title="${p.nama}">${p.nama.toUpperCase()}</div>
-                        <div class="small text-muted text-uppercase mt-1">RUMAH ${p.idRumah || p.rumah || ''}</div>
+                    <td>${idx + 1}</td>
+                    <td class="fw-bold">${p.noBib || '-'}</td>
+                    <td class="text-start">
+                        <div class="fw-bold text-truncate" style="max-width:150px;">${p.nama}</div>
                     </td>
-                    ${sorted.map(ht => `
-                        <td class="bg-light p-1">
+                    ${sorted.map(ht => {
+                        const val = p.rekodLompatan?.[ht] ? p.rekodLompatan[ht].join('') : '';
+                        return `
+                        <td class="p-0">
                             ${isReadOnly ? 
-                                `<div class="fw-bold">${p.rekodLompatan?.[ht]?.join(' ') || ''}</div>` 
+                                `<div style="height:30px; line-height:30px;">${val}</div>` 
                                 : 
-                                `<input type="text" class="form-control form-control-sm hj-input text-center text-uppercase fw-bold text-dark" 
-                                        style="letter-spacing: 2px;"
-                                        data-ht="${ht}" 
-                                        value="${p.rekodLompatan?.[ht]?.join('') || ''}"
-                                        maxlength="3"
-                                        placeholder="OX-">`
+                                `<input type="text" class="form-control form-control-sm border-0 text-center hj-input p-0" 
+                                    style="height:30px; letter-spacing:2px; text-transform:uppercase;"
+                                    data-ht="${ht}" value="${val}" maxlength="3">`
                             }
-                        </td>
-                    `).join('')}
-                    <td class="fw-bold fs-4 text-primary bg-primary bg-opacity-10">
-                        ${p.pencapaian ? parseFloat(p.pencapaian).toFixed(2) : '-.--'}
+                        </td>`;
+                    }).join('')}
+                    
+                    <td class="bg-primary bg-opacity-10 p-1">
+                         ${isReadOnly ? p.pencapaian || '' : 
+                         `<input type="text" class="form-control form-control-sm text-center fw-bold res-input" data-idx="${idx}" value="${p.pencapaian||''}">`}
+                    </td>
+                    <td class="p-1">
+                        ${isReadOnly ? p.kedudukan || '' : 
+                        `<input type="number" class="form-control form-control-sm text-center ked-input" data-idx="${idx}" value="${p.kedudukan > 0 ? p.kedudukan : ''}">`}
                     </td>
                 </tr>
             `;
         });
     }
-    
+
     return t + `</tbody></table></div>` + (isReadOnly ? '' : `
-        <div class="alert alert-info mt-3 small d-print-none border-0 shadow-sm">
-            <i class="bi bi-info-circle-fill me-2"></i> <strong>PANDUAN INPUT:</strong> Gunakan <strong>O</strong> (Lepas), <strong>X</strong> (Batal), dan <strong>-</strong> (Pass). Maksimum 3 percubaan.
+        <div class="alert alert-light border mt-3 small d-print-none">
+            <i class="bi bi-keyboard"></i> <strong>Cara Isi:</strong> Taip 'O' (Lepas), 'X' (Gagal), '-' (Pass). Contoh: "XO" atau "XXO".
         </div>
-        <div class="d-grid mt-3">
-            <button class="btn btn-primary btn-lg py-3 fw-bold shadow-sm rounded-pill" id="btn-save-results">
-                <i class="bi bi-trophy-fill me-2"></i>SIMPAN KEPUTUSAN LOMPAT TINGGI
-            </button>
+        <div class="d-grid mt-2">
+            <button class="btn btn-primary shadow-sm" id="btn-save-results">SIMPAN LOMPAT TINGGI</button>
         </div>
     `);
 }
@@ -1413,6 +1447,7 @@ window.agihanAuto = async (eventId, heatId, label, mode) => {
 document.addEventListener('DOMContentLoaded', () => {
     renderSetupForm();
 });
+
 
 
 
