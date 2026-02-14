@@ -24,17 +24,21 @@ function shuffleArray(array) {
 
 /**
  * FUNGSI UTAMA: Jana Saringan atau Terus ke Akhir
- * Menguruskan pembahagian peserta (individu) atau pasukan (relay) ke lorong balapan.
+ * Menguruskan pembahagian peserta (individu), pasukan (relay), dan acara padang.
  */
 export async function generateHeats(tahun, eventId) {
     try {
-        // 1. Ambil butiran acara untuk menyemak sama ada ia acara Berpasukan (4x)
+        // 1. Ambil butiran acara dan kenal pasti jenis acara
         const eventRef = doc(db, "kejohanan", tahun, "acara", eventId);
         const eventSnap = await getDoc(eventRef);
         
         if (!eventSnap.exists()) throw new Error("Acara tidak dijumpai.");
         const eventData = eventSnap.data();
-        const isRelay = eventData.nama.toLowerCase().startsWith("4x");
+        const namaAcara = eventData.nama.toLowerCase();
+        
+        // KENAL PASTI JENIS ACARA
+        const isRelay = namaAcara.startsWith("4x");
+        const isPadang = namaAcara.includes("lompat") || namaAcara.includes("lontar") || namaAcara.includes("lempar") || namaAcara.includes("merejam");
 
         // 2. Ambil semua peserta yang mendaftar untuk acara ini
         const pesertaRef = collection(db, "kejohanan", tahun, "peserta");
@@ -78,30 +82,42 @@ export async function generateHeats(tahun, eventId) {
             }));
         }
 
-        // 4. Rawakkan urutan untuk agihan lorong
+        // 4. Rawakkan urutan untuk agihan lorong / giliran
         senaraiTandingan = shuffleArray(senaraiTandingan);
         const jumlahEntri = senaraiTandingan.length;
         
-        // 5. Tentukan Status: Saringan atau Terus ke Akhir
-        // Biasanya 4x100m hanya ada 4 rumah, maka ia akan sentiasa jadi 'akhir'
-        const isTerusAkhir = jumlahEntri <= 8;
+        // 5. TENTUKAN STATUS: SARINGAN ATAU TERUS KE AKHIR
+        let isTerusAkhir = false;
+        
+        if (isPadang) {
+            isTerusAkhir = true; // Acara padang sentiasa terus ke akhir
+        } else if (isRelay) {
+            isTerusAkhir = jumlahEntri <= 4; // Pasukan: <= 4 terus ke akhir
+        } else {
+            isTerusAkhir = jumlahEntri <= 8; // Individu: <= 8 terus ke akhir
+        }
+
         const statusBaru = isTerusAkhir ? "akhir" : "saringan";
         const jenisDokumen = isTerusAkhir ? "akhir" : "saringan";
         
-        const jumlahKumpulan = Math.ceil(jumlahEntri / 8);
+        // 6. TENTUKAN KAPASITI KUMPULAN
+        // Jika acara padang, semua peserta duduk dalam SATU kumpulan (tiada had 8 lorong)
+        const kapasitiSatuKumpulan = isPadang ? jumlahEntri : 8;
+        const jumlahKumpulan = Math.ceil(jumlahEntri / kapasitiSatuKumpulan);
+        
         const saringanRef = collection(db, "kejohanan", tahun, "acara", eventId, "saringan");
 
-        // 6. Simpan dokumen Saringan/Akhir ke Firestore
+        // Simpan dokumen Saringan/Akhir ke Firestore
         for (let i = 0; i < jumlahKumpulan; i++) {
-            const mula = i * 8;
-            const tamat = mula + 8;
+            const mula = i * kapasitiSatuKumpulan;
+            const tamat = mula + kapasitiSatuKumpulan;
             const entriKumpulan = senaraiTandingan.slice(mula, tamat);
 
             const dataLorong = entriKumpulan.map((e, index) => ({
                 idPeserta: e.idPeserta || null,
                 idRumah: e.idRumah,
                 nama: e.nama,
-                lorong: index + 1,
+                lorong: index + 1, // Berfungsi sebagai 'Lorong' untuk balapan, atau 'Giliran' untuk padang
                 pencapaian: "",
                 status: "menunggu",
                 isPasukan: e.isPasukan
@@ -122,6 +138,7 @@ export async function generateHeats(tahun, eventId) {
             infoJanaan: {
                 totalEntri: jumlahEntri,
                 jenisTandingan: isRelay ? "pasukan" : "individu",
+                isPadang: isPadang,
                 tarikh: new Date()
             }
         });
@@ -140,7 +157,7 @@ export async function generateHeats(tahun, eventId) {
 
 /**
  * FUNGSI 2: Promote ke Akhir
- * Digunakan untuk membawa pemenang saringan ke peringkat akhir (hanya untuk individu).
+ * Digunakan untuk membawa pemenang saringan ke peringkat akhir (hanya untuk balapan).
  */
 export async function promoteToFinal(tahun, eventId) {
     try {
