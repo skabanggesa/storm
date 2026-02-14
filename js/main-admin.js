@@ -934,41 +934,6 @@ window.pilihSaringan = async (eventId, heatId, labelAcara, mode) => {
     }
 };
 
-        // 6. EVENT LISTENERS (Untuk Butang Simpan)
-        // Kita pasang listener secara manual sebab HTML string susah nak pass object
-        const btnSimpan = document.getElementById('btn-save-results');
-        if (btnSimpan) {
-            btnSimpan.addEventListener('click', () => {
-                simpanKeputusanUmum(eventId, heatId, labelAcara);
-            });
-        }
-        
-        // Listener Khas untuk butang tambah aras (High Jump)
-        const btnAddHeight = document.getElementById('btn-add-height');
-        if (btnAddHeight) {
-            btnAddHeight.addEventListener('click', () => {
-                const height = prompt("Masukkan ketinggian baru (meter):", "1.xx");
-                if (height && !isNaN(height)) {
-                    // Tambah key kosong pada semua peserta
-                    window.currentHeatData.peserta.forEach(p => {
-                        if (!p.rekodLompatan) p.rekodLompatan = {};
-                        if (!p.rekodLompatan[height]) p.rekodLompatan[height] = [];
-                    });
-                    // Refresh paparan
-                    // (Secara ideal simpan ke DB dulu, tapi untuk UI pantas kita refresh HTML)
-                    const newBody = renderBorangLompatTinggi(window.currentHeatData, false);
-                    // Cari div body dan ganti (cara malas: panggil pilihSaringan semula)
-                    simpanKeputusanUmum(eventId, heatId, labelAcara, true); // Simpan & Refresh
-                }
-            });
-        }
-
-    } catch (e) {
-        console.error("Ralat pilihSaringan:", error);
-        contentArea.innerHTML = `<div class="alert alert-danger">Ralat: ${error.message}</div>`;
-    }
-};
-
 // ==============================================================================
 // FUNGSI SIMPAN (SATU UNTUK SEMUA)
 // ==============================================================================
@@ -1529,6 +1494,7 @@ window.agihanAuto = async (eventId, heatId, label, mode) => {
 document.addEventListener('DOMContentLoaded', () => {
     renderSetupForm();
 });
+
 
 
 
