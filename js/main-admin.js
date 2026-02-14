@@ -1154,41 +1154,40 @@ function renderBorangPadang(h, isReadOnly) {
 }
 
 // ==============================================================================
-// RENDER 3: LOMPAT TINGGI (HIGH JUMP) - PEMBETULAN INPUT
+// RENDER 3: LOMPAT TINGGI (VERSI BERSIH & STABIL)
 // ==============================================================================
 function renderBorangLompatTinggi(h, isReadOnly) {
     let allHeights = new Set();
     
-    // 1. Kumpulkan ketinggian yang SUDAH ADA dalam database
     if(h.peserta) {
         h.peserta.forEach(p => {
             if(p.rekodLompatan) Object.keys(p.rekodLompatan).forEach(ht => allHeights.add(ht));
         });
     }
 
-    // Susun ketinggian ikut urutan (1.10, 1.15, ...)
     let sorted = Array.from(allHeights).sort((a,b) => parseFloat(a) - parseFloat(b));
-
-    // LOGIK PENTING:
-    // Jika ReadOnly (Cetak), kita nak nampak kotak kosong kalau data tiada.
-    // Jika Input, kita TIDAK MAHU kotak kosong. Kita nak user tambah ketinggian valid.
     let cols = [];
     
     if (isReadOnly && sorted.length === 0) {
-        cols = Array(10).fill(''); // 10 Kolum hantu untuk cetakan
+        cols = Array(10).fill('');
     } else {
-        cols = sorted; // Guna data sebenar
+        cols = sorted;
     }
 
-    let t = `
-        ${isReadOnly ? '' : `
+    let t = ``;
+
+    if (!isReadOnly) {
+        t += `
         <div class="alert alert-info py-2 small mb-2 d-flex justify-content-between align-items-center d-print-none">
             <span><i class="bi bi-info-circle me-2"></i>Sila tambah ketinggian palang sebelum memasukkan keputusan O/X.</span>
             <button class="btn btn-sm btn-dark rounded-pill shadow-sm" id="btn-add-height">
                 <i class="bi bi-plus-lg text-success"></i> Tambah Ketinggian
             </button>
         </div>
-        `}
+        `;
+    }
+
+    t += `
         <div class="table-responsive bg-white shadow-sm p-3 rounded">
             <table class="table table-bordered text-center align-middle mb-0 table-sm border-dark">
                 <thead class="table-dark small">
@@ -1196,12 +1195,10 @@ function renderBorangLompatTinggi(h, isReadOnly) {
                         <th width="40">No</th>
                         <th width="60">Bib</th>
                         <th class="text-start" style="min-width: 200px;">Nama Peserta</th> 
-                        
                         ${cols.map(ht => {
-                            let headerLabel = (ht === '') ? '' : `${parseFloat(ht).toFixed(2)}m`;
+                            let headerLabel = (ht === '') ? '' : parseFloat(ht).toFixed(2) + 'm';
                             return `<th style="min-width:50px; height: 30px;">${headerLabel}</th>`;
                         }).join('')}
-
                         <th width="80" class="bg-primary border-start border-light">Best</th>
                         <th width="60">Rank</th>
                     </tr>
@@ -1212,7 +1209,6 @@ function renderBorangLompatTinggi(h, isReadOnly) {
     if (!h.peserta || h.peserta.length === 0) {
         t += `<tr><td colspan="${5 + cols.length}">Tiada peserta.</td></tr>`;
     } else {
-        // Susun peserta ikut No Bib
         h.peserta.sort((a,b) => (a.noBib || '').localeCompare(b.noBib || ''));
 
         h.peserta.forEach((p, idx) => {
@@ -1227,25 +1223,21 @@ function renderBorangLompatTinggi(h, isReadOnly) {
                     </td>
 
                     ${cols.map(ht => {
-                        // Jika kolum hantu (untuk cetak sahaja)
                         if (ht === '') {
                             return `<td class="border-end"></td>`;
                         }
-
-                        // Jika kolum sebenar (ada ketinggian)
                         const val = p.rekodLompatan?.[ht] ? p.rekodLompatan[ht].join('') : '';
                         
-                        return `
-                        <td class="p-0">
-                            ${isReadOnly ? 
-                                `<div style="height:35px; line-height:35px; font-weight:bold;">${val}</div>` 
-                                : 
-                                // INPUT LOMPATAN (GRID)
-                                `<input type="text" class="form-control form-control-sm border-0 text-center hj-input p-0 fw-bold" 
+                        let cellContent = '';
+                        if (isReadOnly) {
+                             cellContent = `<div style="height:35px; line-height:35px; font-weight:bold;">${val}</div>`;
+                        } else {
+                             cellContent = `<input type="text" class="form-control form-control-sm border-0 text-center hj-input p-0 fw-bold" 
                                     style="height:35px; letter-spacing:2px; text-transform:uppercase; background-color: #fff;"
-                                    data-ht="${ht}" value="${val}" maxlength="3">`
-                            }
-                        </td>`;
+                                    data-ht="${ht}" value="${val}" maxlength="3">`;
+                        }
+
+                        return `<td class="p-0">${cellContent}</td>`;
                     }).join('')}
                     
                     <td class="bg-primary bg-opacity-10 p-1 border-start border-secondary fw-bold">
