@@ -715,7 +715,7 @@ async function renderSenaraiAcara(mode) {
 }
 
 // ==============================================================================
-// 9. PEMILIHAN SARINGAN (HEAT) & CETAKAN
+// 9. PEMILIHAN SARINGAN (HEAT) & CETAKAN (DIKEMASKINI)
 // ==============================================================================
 window.pilihAcara = async (eventId, label, mode) => {
     contentArea.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-info"></div><p>Memuatkan Saringan...</p></div>';
@@ -733,7 +733,7 @@ window.pilihAcara = async (eventId, label, mode) => {
         <div class="row mb-3 d-print-none">
             <div class="col-12">
                 <div class="alert alert-secondary py-2 small">
-                    <i class="bi bi-info-circle-fill me-2"></i>Sila pilih saringan di bawah untuk meneruskan. Saringan yang selesai akan ditanda hijau.
+                    <i class="bi bi-info-circle-fill me-2"></i>Sila pilih sesi di bawah untuk meneruskan. Sesi yang selesai akan ditanda hijau.
                 </div>
             </div>
         </div>
@@ -744,7 +744,7 @@ window.pilihAcara = async (eventId, label, mode) => {
     if (heats.length === 0) {
         html += `
             <div class="list-group-item text-center py-4 bg-light">
-                <p class="text-muted mb-0">Tiada saringan dicipta untuk acara ini.</p>
+                <p class="text-muted mb-0">Tiada sesi/saringan dicipta untuk acara ini.</p>
             </div>
         `;
     } else {
@@ -755,11 +755,22 @@ window.pilihAcara = async (eventId, label, mode) => {
             const statusColor = h.status === 'selesai' ? 'success' : 'warning';
             const statusText = h.status === 'selesai' ? 'Selesai' : 'Sedang Berlangsung';
             
+            // --- LOGIK BARU DI SINI ---
+            // Semak jika jenis adalah 'akhir', tukar teks paparan
+            let labelPaparan = `Saringan ${h.noSaringan}`;
+            
+            if (h.jenis === 'akhir') {
+                labelPaparan = "ACARA AKHIR";
+            }
+            // --------------------------
+            
             html += `
                 <button class="list-group-item list-group-item-action d-flex justify-content-between align-items-center p-3 border-start border-4 border-${statusColor}" 
                         onclick="pilihSaringan('${eventId}', '${h.id}', '${label}', '${mode}')">
                     <div>
-                        <span class="fw-bold fs-5"><i class="bi bi-flag-fill me-2 text-dark"></i>Saringan ${h.noSaringan}</span>
+                        <span class="fw-bold fs-5">
+                            <i class="bi bi-flag-fill me-2 text-dark"></i>${labelPaparan}
+                        </span>
                     </div>
                     <span class="badge rounded-pill bg-${statusColor} ${statusColor==='warning'?'text-dark':''} p-2 d-print-none shadow-sm">
                         ${statusText} <i class="bi bi-chevron-right ms-1"></i>
@@ -1260,3 +1271,4 @@ window.agihanAuto = async (eventId, heatId, label, mode) => {
 document.addEventListener('DOMContentLoaded', () => {
     renderSetupForm();
 });
+
