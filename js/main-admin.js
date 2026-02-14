@@ -824,14 +824,19 @@ window.pilihAcara = async (eventId, label, mode) => {
 };
 
 // ==============================================================================
-// 10. PAPARKAN DATA SARINGAN (INPUT KEPUTUSAN / LIHAT PESERTA)
+// 10. PAPARKAN DATA SARINGAN (KOD DIKEMASKINI: BEZA ANTARA URUS & INPUT)
 // ==============================================================================
 window.pilihSaringan = async (eventId, heatId, labelAcara, mode) => {
     // 1. Paparan Loading
     contentArea.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary"></div><p>Memuatkan data saringan...</p></div>';
 
     try {
-        // 2. Dapatkan Data Saringan Spesifik
+        // Tentukan adakah ini mod Input Data atau sekadar View/Cetak
+        // Mode 'input' datang dari menu "Input Keputusan"
+        // Mode 'urus' datang dari menu "Urus Acara"
+        const isEditMode = (mode === 'input'); 
+
+        // 2. Dapatkan Data Saringan
         const tStr = tahunAktif.toString();
         const heatRef = doc(db, "kejohanan", tStr, "acara", eventId, "saringan", heatId);
         const heatSnap = await getDoc(heatRef);
@@ -844,11 +849,9 @@ window.pilihSaringan = async (eventId, heatId, labelAcara, mode) => {
         const data = heatSnap.data();
         const peserta = data.peserta || [];
 
-        // --- PEMBETULAN: Tentukan Tajuk (Saringan vs Akhir) ---
+        // Tentukan Tajuk (Saringan vs Akhir)
         let tajukSaringan = `Saringan ${data.noSaringan}`;
         let badgeJenis = `<span class="badge bg-secondary ms-2">Saringan</span>`;
-
-        // Jika database kata ini adalah "akhir"
         if (data.jenis === 'akhir') {
             tajukSaringan = "ACARA AKHIR";
             badgeJenis = `<span class="badge bg-warning text-dark ms-2">AKHIR</span>`;
@@ -866,7 +869,7 @@ window.pilihSaringan = async (eventId, heatId, labelAcara, mode) => {
                 <div>
                     ${badgeJenis}
                     <button class="btn btn-sm btn-success ms-2" onclick="window.print()">
-                        <i class="bi bi-printer"></i> Cetak
+                        <i class="bi bi-printer"></i> Cetak Borang
                     </button>
                 </div>
             </div>
@@ -874,65 +877,72 @@ window.pilihSaringan = async (eventId, heatId, labelAcara, mode) => {
             <div class="text-center mb-4">
                 <h3 class="fw-bold text-uppercase">${labelAcara}</h3>
                 <h4 class="fw-bold text-dark bg-light py-2 border border-dark rounded">${tajukSaringan}</h4>
+                ${!isEditMode ? '<p class="small text-muted d-print-none">(Mod Cetakan: Input dikunci)</p>' : ''}
             </div>
         `;
 
-        // 4. Input Markah / Paparan Peserta
+        // 4. Jadual Peserta
         if (peserta.length === 0) {
             html += `<div class="alert alert-warning text-center">Tiada peserta dalam saringan ini.</div>`;
         } else {
-            // Sort peserta ikut lorong
+            // Susun peserta ikut lorong
             peserta.sort((a, b) => a.lorong - b.lorong);
 
             html += `
             <div class="table-responsive">
-                <table class="table table-bordered table-striped align-middle">
+                <table class="table table-bordered align-middle">
                     <thead class="table-dark text-center">
                         <tr>
                             <th style="width: 80px;">Lorong</th>
                             <th style="width: 100px;">No. Bib</th>
                             <th>Nama Peserta</th>
-                            <th>Pasukan/Rumah</th>
-                            <th style="width: 150px;">Keputusan</th>
-                            <th style="width: 100px;">Kedudukan</th>
+                            <th>Pasukan</th>
+                            <th style="width: 150px;">Keputusan</th> <th style="width: 100px;">Kedudukan</th>
                         </tr>
                     </thead>
                     <tbody>
             `;
 
             peserta.forEach((p, index) => {
-                // Input Keputusan (Masa/Jarak)
                 const nilaiMasa = p.pencapaian || ""; 
                 const nilaiKedudukan = p.kedudukan || "";
                 
-                // Warna baris jika sudah ada keputusan
-                const highlight = nilaiKedudukan > 0 ? "table-success" : "";
+                // Logic Paparan Input vs Teks Biasa
+                let inputMasa, inputKedudukan;
+
+                if (isEditMode) {
+                    // MOD INPUT KEPUTUSAN: Papar Kotak Input
+                    inputMasa = `
+                        <input type="text" class="form-control text-center fw-bold" 
+                            value="${nilaiMasa}" placeholder="--.--"
+                            onchange="kemaskiniDataTempatan('${index}', 'pencapaian', this.value)">
+                    `;
+                    inputKedudukan = `
+                        <input type="number" class="form-control text-center fw-bold" 
+                            value="${nilaiKedudukan > 0 ? nilaiKedudukan : ''}" min="0" max="20"
+                            onchange="kemaskiniDataTempatan('${index}', 'kedudukan', this.value)">
+                    `;
+                } else {
+                    // MOD URUS / CETAK: Papar Garisan Kosong (Untuk tulis tangan) atau Nilai sedia ada
+                    // Jika belum ada keputusan, papar garisan _____ untuk hakim tulis
+                    const displayMasa = nilaiMasa || "__________"; 
+                    const displayKed = nilaiKedudukan || "___";
+                    
+                    inputMasa = `<div class="text-center py-2 text-muted">${displayMasa}</div>`;
+                    inputKedudukan = `<div class="text-center py-2 text-muted">${displayKed}</div>`;
+                }
 
                 html += `
-                    <tr class="${highlight}">
+                    <tr>
                         <td class="text-center fw-bold fs-5">${p.lorong}</td>
                         <td class="text-center">${p.noBib || '-'}</td>
                         <td>
                             <div class="fw-bold">${p.nama}</div>
-                            <small class="text-muted d-block d-print-none">${p.sekolah || ''}</small>
+                            <small class="text-muted d-block">${p.sekolah || ''}</small>
                         </td>
                         <td class="text-center">${p.idRumah ? p.idRumah.toUpperCase() : '-'}</td>
-                        
-                        <td>
-                            <input type="text" class="form-control text-center input-keputusan" 
-                                id="masa-${index}" 
-                                value="${nilaiMasa}" 
-                                placeholder="--.--"
-                                onchange="kemaskiniDataTempatan('${index}', 'pencapaian', this.value)">
-                        </td>
-
-                        <td>
-                            <input type="number" class="form-control text-center input-kedudukan fw-bold" 
-                                id="kd-${index}" 
-                                value="${nilaiKedudukan > 0 ? nilaiKedudukan : ''}" 
-                                min="0" max="20"
-                                onchange="kemaskiniDataTempatan('${index}', 'kedudukan', this.value)">
-                        </td>
+                        <td>${inputMasa}</td>
+                        <td>${inputKedudukan}</td>
                     </tr>
                 `;
             });
@@ -941,18 +951,28 @@ window.pilihSaringan = async (eventId, heatId, labelAcara, mode) => {
                     </tbody>
                 </table>
             </div>
-
-            <div class="d-flex justify-content-end mt-4 d-print-none">
-                <button id="btn-simpan-result" class="btn btn-primary btn-lg shadow" onclick="simpanKeputusanSaringan('${eventId}', '${heatId}', '${labelAcara}')">
-                    <i class="bi bi-save me-2"></i> Simpan Keputusan
-                </button>
-            </div>
             `;
+
+            // Butang Simpan HANYA muncul jika mode === 'input'
+            if (isEditMode) {
+                html += `
+                <div class="d-flex justify-content-end mt-4 d-print-none">
+                    <button id="btn-simpan-result" class="btn btn-primary btn-lg shadow" onclick="simpanKeputusanSaringan('${eventId}', '${heatId}', '${labelAcara}')">
+                        <i class="bi bi-save me-2"></i> Simpan Keputusan
+                    </button>
+                </div>
+                `;
+            } else {
+                html += `
+                <div class="alert alert-info d-print-none mt-3">
+                    <i class="bi bi-info-circle me-2"></i>
+                    Ini adalah paparan cetakan. Untuk memasukkan keputusan, sila pergi ke menu <b>3. Input Keputusan</b>.
+                </div>
+                `;
+            }
         }
 
         contentArea.innerHTML = html;
-
-        // Simpan data peserta dalam variable global sementara untuk tujuan edit
         window.currentPesertaData = peserta;
 
     } catch (error) {
@@ -1393,6 +1413,7 @@ window.agihanAuto = async (eventId, heatId, label, mode) => {
 document.addEventListener('DOMContentLoaded', () => {
     renderSetupForm();
 });
+
 
 
 
