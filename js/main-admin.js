@@ -2,11 +2,12 @@
  * ==============================================================================
  * SISTEM PENGURUSAN KEJOHANAN OLAHRAGA TAHUNAN (KOT)
  * FAIL: main-admin.js
- * FUNGSI: Menguruskan antaramuka Admin, Setup, Acara, Keputusan & Utiliti Data
- * VERSI: PENUH (GABUNGAN ASAL + FIX LOMPAT TINGGI + INPUT MODE)
+ * VERSI: FINAL STABLE (DEBUG MODE + HIGH JUMP FIX + INPUT FIX)
  * ==============================================================================
  */
 
+// 1. IMPORT MODUL LOGIK
+// Pastikan path './modules/admin.js' wujud dalam folder modules
 import { 
     initializeTournament, 
     getEventsReadyForResults, 
@@ -23,7 +24,7 @@ import {
 import { highJumpLogic } from './modules/highjump-logic.js'; 
 import { db } from './firebase-config.js';
 
-// --- IMPORT FIRESTORE ---
+// 2. IMPORT FIRESTORE SDK (Guna URL CDN yang stabil)
 import { 
     doc, 
     getDoc, 
@@ -38,35 +39,71 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
 
 // ==============================================================================
-// 0. TETAPAN TAHUN AKTIF & INISIALISASI
+// 0. GLOBAL VARIABLES & DEBUGGING
 // ==============================================================================
-let tahunAktif = sessionStorage.getItem("tahun_aktif") || new Date().getFullYear().toString(); 
+let tahunAktif = sessionStorage.getItem("tahun_aktif") || new Date().getFullYear().toString();
 const contentArea = document.getElementById('content-area');
 
-// Variable Global untuk Simpanan Sementara Data Saringan
+// Variable Global Sementara untuk Simpanan Data
 window.currentHeatData = null;
 window.currentHeatId = null;
 window.currentEventId = null;
 window.currentLabel = null;
-window.currentMode = 'input'; // Default input
+window.currentMode = 'input'; 
 
+// --- PENANGKAP RALAT (ERROR CATCHER) ---
+// Fungsi ini akan memaparkan kotak merah jika skrin tersangkut (stuck)
+window.onerror = function(message, source, lineno, colno, error) {
+    console.error("Ralat Kritikal Dikesan:", error);
+    if(contentArea) {
+        contentArea.innerHTML = `
+        <div class="alert alert-danger p-4 shadow-sm m-3">
+            <h4 class="alert-heading"><i class="bi bi-bug-fill me-2"></i>Sistem Terhenti!</h4>
+            <p>Terdapat ralat teknikal yang menghalang halaman daripada dimuatkan.</p>
+            <hr>
+            <pre class="bg-dark text-warning p-3 rounded small" style="overflow-x:auto;">
+Ralat: ${message}
+Lokasi: ${source}:${lineno}
+            </pre>
+            <div class="mt-3">
+                <button class="btn btn-outline-danger btn-sm me-2" onclick="location.reload()">
+                    <i class="bi bi-arrow-clockwise me-1"></i>Muat Semula
+                </button>
+                <a href="index.html" class="btn btn-secondary btn-sm">
+                    <i class="bi bi-house me-1"></i>Ke Laman Utama
+                </a>
+            </div>
+        </div>`;
+    }
+};
+
+// ==============================================================================
+// 1. INITIALIZATION (DOM READY)
+// ==============================================================================
 document.addEventListener('DOMContentLoaded', async () => {
-    // Sembunyikan butang menu 'Input Keputusan' (Tab 3)
+    console.log("Sistem Admin Bermula...");
+
+    // Semak elemen HTML penting
+    if (!contentArea) {
+        console.error("RALAT: <div id='content-area'> tidak dijumpai!");
+        alert("Ralat HTML: Elemen content-area tiada.");
+        return;
+    }
+
+    // Sembunyikan Tab Input (Elak kekeliruan, kita guna satu laluan sahaja)
     const btnInput = document.getElementById('btn-menu-input'); 
     if(btnInput) btnInput.style.display = 'none';
 
-    // Tukar nama butang Admin kepada Urus & Isi
+    // Tukar Label Butang Admin
     const btnUrus = document.getElementById('btn-menu-admin');
     if(btnUrus) btnUrus.innerHTML = '<i class="bi bi-pencil-square me-2"></i>Urus & Isi Keputusan';
-    
-    // Log Info
-    console.info("========================================");
-    console.info("Sistem STORMS (Admin) dimulakan...");
-    console.info("Tahun aktif digunakan:", tahunAktif);
-    console.info("========================================");
+
+    // Papar Tahun pada UI
+    const labelTahun = document.getElementById('tahun-label');
+    if(labelTahun) labelTahun.innerText = `Tahun: ${tahunAktif}`;
 });
 
-// Fungsi Log Keluar
+// Log Keluar
 document.getElementById('btn-logout')?.addEventListener('click', () => {
     if(confirm("Adakah anda pasti mahu log keluar dari panel admin?")) {
         sessionStorage.clear();
@@ -909,3 +946,4 @@ document.addEventListener('click', async function(e) {
         }
     }
 });
+
