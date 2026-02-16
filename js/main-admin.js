@@ -419,7 +419,6 @@ async function renderSetupDashboard() {
     document.getElementById('btn-manage-house').onclick = () => {
         renderSenaraiRumah();
     };
-  }
 }
 
 // ==============================================================================
@@ -1741,6 +1740,7 @@ async function kiraStatistikPemenang(kategori, idTitle, idStats) {
     }
 }
 // End of File
+
 
 
 
