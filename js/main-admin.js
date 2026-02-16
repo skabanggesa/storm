@@ -329,7 +329,6 @@ async function renderSetupDashboard() {
     document.getElementById('btn-manage-house').onclick = () => {
         renderSenaraiRumah();
     };
-}
 
 // ==============================================================================
 // BAHAGIAN D: PENGURUSAN RUMAH SUKAN
@@ -1626,4 +1625,5 @@ async function jalankanPengiraan(kategoriTarget, displayID) {
     }
 }
 // End of File
+
 
