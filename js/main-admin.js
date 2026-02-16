@@ -1568,27 +1568,6 @@ async function kiraStatistikPemenang(kategori, idTitle, idStats) {
     }
 }
 
-// Fungsi Helper untuk Paparan Kad
-function updateWinnerCard(idTitle, idStats, data) {
-    const elTitle = document.getElementById(idTitle);
-    const elStats = document.getElementById(idStats);
-    if(!elTitle || !elStats) return;
-
-    if(data) {
-        elTitle.innerHTML = `<h4 class="mb-0 fw-bold text-primary">${data.nama}</h4><div class="text-uppercase text-muted fw-bold small mt-1">${data.rumah}</div>`;
-        elStats.innerHTML = `
-            <div class="d-flex justify-content-center gap-2 mt-2">
-                <span class="badge bg-danger">Rekod: ${data.rekod}</span>
-                <span class="badge bg-warning text-dark">Emas: ${data.emas}</span>
-                <span class="badge bg-secondary">Perak: ${data.perak}</span>
-                <span class="badge bg-brown" style="background:#cd7f32">Gangsa: ${data.gangsa}</span>
-            </div>`;
-    } else {
-        elTitle.innerHTML = `<h5 class="mb-0 text-muted fst-italic">Tiada Calon</h5>`;
-        elStats.innerHTML = ``;
-    }
-}
-
 // ==============================================================================
 // BAHAGIAN O: FUNGSI HELPER UI (PENTING UNTUK DASHBOARD)
 // ==============================================================================
@@ -1623,3 +1602,4 @@ function updateWinnerCard(idTitle, idStats, data) {
     }
 }
 // End of File
+
