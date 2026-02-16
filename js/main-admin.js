@@ -164,11 +164,11 @@ function setActiveMenu(activeId) {
  * Mengandungi statistik ringkas dan menu utiliti sistem.
  */
 // ==============================================================================
-// BAHAGIAN F: UI DASHBOARD UTAMA & SETUP (VERSI PENUH)
+// BAHAGIAN F: UI DASHBOARD UTAMA & SETUP (VERSI PENUH & BERFUNGSI)
 // ==============================================================================
 
 async function renderSetupDashboard() {
-    const contentArea = document.getElementById('content-area'); // Pastikan ID ini betul ikut HTML anda (content-area atau main-content)
+    const contentArea = document.getElementById('content-area'); // Pastikan ID ini betul (main-content atau content-area)
     
     // Paparan Loading Sementara
     contentArea.innerHTML = `<div class="text-center py-5"><div class="spinner-border text-primary" role="status"></div><p class="mt-2">Memuatkan Dashboard...</p></div>`;
@@ -181,14 +181,11 @@ async function renderSetupDashboard() {
     };
 
     try {
-        // Kira Acara
         const acaraSnap = await getDocs(collection(db, "kejohanan", tahunAktif, "acara"));
         stats.totalAcara = acaraSnap.size;
 
-        // Kira Peserta 
         const pesertaSnap = await getDocs(collection(db, "kejohanan", tahunAktif, "peserta"));
         stats.totalPeserta = pesertaSnap.size;
-
     } catch (e) {
         console.error("Gagal memuatkan statistik:", e);
     }
@@ -251,14 +248,14 @@ async function renderSetupDashboard() {
                         
                         <div class="col-md-3">
                             <div class="card h-100 border-0 shadow-sm">
-                                <div class="card-header bg-dark text-white fw-bold small">OLAHRAGAWAN (L12)</div>
+                                <div class="card-header bg-dark text-white fw-bold small">OLAHRAGAWAN (L1)</div>
                                 <div class="card-body py-3 d-flex flex-column justify-content-center" id="winner-L12">
                                     <h5 class="text-muted fst-italic fs-6">Belum Dikira</h5>
                                 </div>
                                 <div class="card-footer bg-white border-0 p-2" id="stats-L12"></div>
                                 <div class="p-2 border-top">
                                     <button id="btn-olahragawan-L12" class="btn btn-sm btn-outline-dark w-100 fw-bold">
-                                        <i class="bi bi-calculator me-1"></i> Kira L12
+                                        <i class="bi bi-calculator me-1"></i> Kira L1
                                     </button>
                                 </div>
                             </div>
@@ -266,14 +263,14 @@ async function renderSetupDashboard() {
 
                         <div class="col-md-3">
                             <div class="card h-100 border-0 shadow-sm">
-                                <div class="card-header bg-danger text-white fw-bold small">OLAHRAGAWATI (P12)</div>
+                                <div class="card-header bg-danger text-white fw-bold small">OLAHRAGAWATI (P1)</div>
                                 <div class="card-body py-3 d-flex flex-column justify-content-center" id="winner-P12">
                                     <h5 class="text-muted fst-italic fs-6">Belum Dikira</h5>
                                 </div>
                                 <div class="card-footer bg-white border-0 p-2" id="stats-P12"></div>
                                  <div class="p-2 border-top">
                                     <button id="btn-olahragawan-P12" class="btn btn-sm btn-outline-danger w-100 fw-bold">
-                                        <i class="bi bi-calculator me-1"></i> Kira P12
+                                        <i class="bi bi-calculator me-1"></i> Kira P1
                                     </button>
                                 </div>
                             </div>
@@ -309,31 +306,111 @@ async function renderSetupDashboard() {
                             </div>
                         </div>
                     </div>
+                </div>
+            </div>
 
-                    <div class="mt-4">
-                        <h6 class="fw-bold mb-2">Senarai Top 20 Pungutan Pingat Individu</h6>
-                        <div class="table-responsive bg-white rounded shadow-sm" style="max-height: 300px; overflow-y: auto;">
-                            <table class="table table-sm table-hover table-striped mb-0 text-center align-middle small" id="table-ranking-full">
-                                <thead class="table-dark sticky-top">
-                                    <tr>
-                                        <th>#</th>
-                                        <th class="text-start">Nama</th>
-                                        <th>Kat</th>
-                                        <th>Rumah</th>
-                                        <th>Rekod</th>
-                                        <th class="text-warning">Emas</th>
-                                        <th class="text-secondary">Perak</th>
-                                        <th style="color:#cd7f32">Gangsa</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr><td colspan="8" class="text-muted py-3">Klik mana-mana butang "Kira" di atas.</td></tr>
-                                </tbody>
-                            </table>
+            <div class="row mb-5">
+                <div class="col-lg-6 mb-4">
+                    <div class="card shadow-sm h-100">
+                        <div class="card-header bg-white fw-bold">
+                            <i class="bi bi-database-gear me-2 text-primary"></i>Operasi Pangkalan Data
+                        </div>
+                        <div class="card-body">
+                            <button class="btn btn-outline-primary w-100 mb-2 text-start" id="btn-init">
+                                <i class="bi bi-magic me-2"></i>Jana Struktur Awal (Tahun Baru)
+                            </button>
+                            <button class="btn btn-outline-success w-100 mb-2 text-start" id="btn-manage-house">
+                                <i class="bi bi-key me-2"></i>Urus Kata Laluan Rumah Sukan
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-lg-6 mb-4">
+                    <div class="card shadow-sm h-100">
+                        <div class="card-header bg-white fw-bold">
+                            <i class="bi bi-file-earmark-spreadsheet me-2 text-success"></i>Import Data Pukal
+                        </div>
+                        <div class="card-body">
+                            <p class="text-muted small">Muat naik fail CSV untuk data peserta.</p>
+                            <button class="btn btn-success w-100" data-bs-toggle="modal" data-bs-target="#modalCSV">
+                                <i class="bi bi-cloud-upload me-2"></i>Muat Naik CSV Rekod
+                            </button>
                         </div>
                     </div>
                 </div>
             </div>
+            
+            <div id="house-list-container" class="mt-2"></div>
+        </div>
+    `;
+
+    contentArea.innerHTML = html;
+
+    // =========================================================
+    // BAHAGIAN PENTING: MENGHUBUNGKAN BUTANG DENGAN FUNGSI
+    // =========================================================
+
+    // 1. Tombol Utiliti
+    const btnInit = document.getElementById('btn-init');
+    if(btnInit) {
+        btnInit.onclick = async () => {
+            if(!confirm(`AMARAN PENTING:\n\nAdakah anda pasti?`)) return;
+            const defaultEvents = [
+                { nama: "100m", kategori: "L1", jenis: "Balapan" },
+                { nama: "200m", kategori: "L1", jenis: "Balapan" },
+                { nama: "4x100m", kategori: "L1", jenis: "Balapan" },
+                { nama: "Lompat Jauh", kategori: "L1", jenis: "Padang" },
+                { nama: "Lontar Peluru", kategori: "L1", jenis: "Padang" }
+            ];
+            contentArea.innerHTML = renderLoadingSpinner("Menjana Struktur...");
+            const res = await initializeTournament(tahunAktif, defaultEvents);
+            if(res.success) { alert("Berjaya."); renderSetupDashboard(); }
+            else { alert("Ralat: " + res.message); renderSetupDashboard(); }
+        };
+    }
+
+    const btnManageHouse = document.getElementById('btn-manage-house');
+    if(btnManageHouse) {
+        btnManageHouse.onclick = () => {
+            renderSenaraiRumah();
+        };
+    }
+
+    // 2. TOMBOL PENGIRAAN OLAHRAGAWAN
+    
+    // Kira Olahragawan (L1)
+    const btnL12 = document.getElementById('btn-olahragawan-L12');
+    if(btnL12) {
+        btnL12.onclick = () => {
+            kiraStatistikPemenang('L1', 'winner-L12', 'stats-L12');
+        };
+    }
+
+    // Kira Olahragawati (P1)
+    const btnP12 = document.getElementById('btn-olahragawan-P12');
+    if(btnP12) {
+        btnP12.onclick = () => {
+            kiraStatistikPemenang('P1', 'winner-P12', 'stats-P12');
+        };
+    }
+
+    // Kira Harapan Lelaki
+    const btnHarapanL = document.getElementById('btn-harapan-L');
+    if(btnHarapanL) {
+        btnHarapanL.onclick = () => {
+            kiraStatistikPemenang('HarapanL', 'winner-harapan-L', 'stats-harapan-L');
+        };
+    }
+
+    // Kira Harapan Perempuan
+    const btnHarapanP = document.getElementById('btn-harapan-P');
+    if(btnHarapanP) {
+        btnHarapanP.onclick = () => {
+            kiraStatistikPemenang('HarapanP', 'winner-harapan-P', 'stats-harapan-P');
+        };
+    }
+}
 
             <div class="row mb-5">
                 <div class="col-lg-6 mb-4">
@@ -1774,6 +1851,7 @@ function updateWinnerCard(idTitle, idStats, data) {
     }
 }
 // End of File
+
 
 
 
