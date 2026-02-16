@@ -1511,7 +1511,7 @@ document.getElementById('btn-proses-csv')?.addEventListener('click', async () =>
 });
 
 // ==============================================================================
-// BAHAGIAN K-L: EVENT LISTENER PUSAT (GLOBAL CLICK HANDLER)
+// BAHAGIAN L: EVENT LISTENER PUSAT (GLOBAL CLICK HANDLER)
 // ==============================================================================
 
 document.addEventListener('click', async (e) => {
@@ -1526,7 +1526,7 @@ document.addEventListener('click', async (e) => {
 });
 
 // ==============================================================================
-// BAHAGIAN L: INIT
+// BAHAGIAN M: INIT
 // ==============================================================================
 
 // Pastikan DOM sedia sebelum memuatkan data
@@ -1536,7 +1536,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ==============================================================================
-// BAHAGIAN J: LOGIK OLAHRAGAWAN & STATISTIK (HIERARKI: REKOD > EMAS > PERAK > GANGSA)
+// BAHAGIAN N: LOGIK OLAHRAGAWAN & STATISTIK (HIERARKI: REKOD > EMAS > PERAK > GANGSA)
 // ==============================================================================
 
 async function kiraStatistikPemenang() {
@@ -1699,5 +1699,6 @@ function updateWinnerCard(idTitle, idStats, data) {
     }
 }
 // End of File
+
 
 
