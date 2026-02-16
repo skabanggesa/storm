@@ -163,140 +163,189 @@ function setActiveMenu(activeId) {
  * Memaparkan papan pemuka (dashboard) utama.
  * Mengandungi statistik ringkas dan menu utiliti sistem.
  */
+// ==============================================================================
+// BAHAGIAN F: UI DASHBOARD UTAMA & SETUP
+// ==============================================================================
+
 async function renderSetupDashboard() {
-    // Paparan Loading Sementara
-    contentArea.innerHTML = renderLoadingSpinner("Memuatkan Papan Pemuka...");
+    const content = document.getElementById('main-content');
+    
+    // Kira statistik ringkas (Acara Selesai / Rekod)
+    // Nota: Angka ini akan dikemaskini bila data ditarik, buat masa ini kita letak placeholder
+    const statAcara = '-'; 
+    const statRekod = '-';
 
-    // Dapatkan statistik ringkas (count)
-    let stats = {
-        totalAcara: 0,
-        totalPeserta: 0,
-        totalRumah: 4
-    };
-
-    try {
-        // Kira Acara
-        const acaraSnap = await getDocs(collection(db, "kejohanan", tahunAktif, "acara"));
-        stats.totalAcara = acaraSnap.size;
-
-        // Kira Peserta (Batch limit untuk performance jika perlu, di sini kita ambil saiz sahaja)
-        const pesertaSnap = await getDocs(collection(db, "kejohanan", tahunAktif, "peserta"));
-        stats.totalPeserta = pesertaSnap.size;
-
-    } catch (e) {
-        console.error("Gagal memuatkan statistik:", e);
-    }
-
-    const html = `
-        <div class="container-fluid animate__animated animate__fadeIn">
-            <div class="row mb-4">
-                <div class="col-12">
-                    <h3 class="fw-bold text-dark border-start border-5 border-primary ps-3">
-                        Papan Pemuka & Tetapan (${tahunAktif})
-                    </h3>
-                    <p class="text-muted ms-3 mb-0">Pusat kawalan utama sistem pengurusan kejohanan.</p>
-                </div>
+    content.innerHTML = `
+        <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+            <h1 class="h2">Dashboard Kejohanan & Utiliti</h1>
+            <div class="btn-toolbar mb-2 mb-md-0">
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print()">
+                    <i class="bi bi-printer me-1"></i> Cetak Paparan
+                </button>
             </div>
+        </div>
 
-            <div class="row mb-4">
-                <div class="col-md-4">
-                    <div class="card shadow-sm border-0 bg-primary text-white h-100">
-                        <div class="card-body d-flex align-items-center">
-                            <div class="display-4 me-3"><i class="bi bi-people-fill"></i></div>
-                            <div>
-                                <h5 class="card-title mb-0">Jumlah Atlet</h5>
-                                <h2 class="fw-bold mb-0">${stats.totalPeserta}</h2>
-                                <small>Peserta Berdaftar</small>
-                            </div>
+        <div class="row g-3 mb-4">
+            <div class="col-md-6">
+                <div class="card bg-primary text-white h-100 shadow-sm">
+                    <div class="card-body d-flex align-items-center justify-content-between">
+                        <div>
+                            <h6 class="card-title text-uppercase mb-1">Status Kejohanan</h6>
+                            <small class="d-block text-white-50">Data Sedang Diproses</small>
                         </div>
-                    </div>
-                </div>
-                <div class="col-md-4">
-                    <div class="card shadow-sm border-0 bg-success text-white h-100">
-                        <div class="card-body d-flex align-items-center">
-                            <div class="display-4 me-3"><i class="bi bi-trophy-fill"></i></div>
-                            <div>
-                                <h5 class="card-title mb-0">Jumlah Acara</h5>
-                                <h2 class="fw-bold mb-0">${stats.totalAcara}</h2>
-                                <small>Dipertandingkan</small>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-4">
-                    <div class="card shadow-sm border-0 bg-info text-white h-100">
-                        <div class="card-body d-flex align-items-center">
-                            <div class="display-4 me-3"><i class="bi bi-house-door-fill"></i></div>
-                            <div>
-                                <h5 class="card-title mb-0">Rumah Sukan</h5>
-                                <h2 class="fw-bold mb-0">${stats.totalRumah}</h2>
-                                <small>Pasukan Bertanding</small>
-                            </div>
-                        </div>
+                        <i class="bi bi-bar-chart-fill fs-1 opacity-50"></i>
                     </div>
                 </div>
             </div>
-
-            <div class="row">
-                <div class="col-lg-6 mb-4">
-                    <div class="card shadow-sm h-100">
-                        <div class="card-header bg-white fw-bold">
-                            <i class="bi bi-database-gear me-2 text-primary"></i>Operasi Pangkalan Data
+             <div class="col-md-6">
+                <div class="card bg-success text-white h-100 shadow-sm">
+                    <div class="card-body d-flex align-items-center justify-content-between">
+                        <div>
+                            <h6 class="card-title text-uppercase mb-1">Rekod Dipecahkan</h6>
+                            <h2 class="mb-0" id="stat-rekod-dash">${statRekod}</h2>
                         </div>
-                        <div class="card-body">
-                            <p class="text-muted small">Fungsi untuk memulakan tahun baru atau mengemaskini struktur data asas.</p>
-                            
-                            <button class="btn btn-outline-primary w-100 mb-2 text-start" id="btn-init">
-                                <i class="bi bi-magic me-2"></i>Jana Struktur Awal (Tahun Baru)
-                            </button>
-                            
-                            <button class="btn btn-outline-success w-100 mb-2 text-start" id="btn-manage-house">
-                                <i class="bi bi-key me-2"></i>Urus Kata Laluan Rumah Sukan
-                            </button>
+                        <i class="bi bi-trophy-fill fs-1 opacity-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
 
-                            <hr>
+        <div class="card shadow-sm mb-4 border-primary border-2">
+            <div class="card-header bg-white py-3">
+                <h5 class="mb-0 text-primary fw-bold"><i class="bi bi-person-badge-fill me-2"></i>Anugerah Khas Individu</h5>
+            </div>
+            <div class="card-body bg-light">
+                <div class="row text-center g-3">
+                    
+                    <div class="col-md-3">
+                        <div class="card h-100 border-0 shadow-sm">
+                            <div class="card-header bg-dark text-white fw-bold small">OLAHRAGAWAN (L12)</div>
+                            <div class="card-body py-3 d-flex flex-column justify-content-center" id="winner-L12">
+                                <h5 class="text-muted fst-italic fs-6">Belum Dikira</h5>
+                            </div>
+                            <div class="card-footer bg-white border-0 p-2" id="stats-L12"></div>
+                            <div class="p-2 border-top">
+                                <button id="btn-olahragawan-L12" class="btn btn-sm btn-outline-dark w-100 fw-bold">
+                                    <i class="bi bi-calculator me-1"></i> Kira L12
+                                </button>
+                            </div>
+                        </div>
+                    </div>
 
-                            <p class="text-muted small">Zon Bahaya & Penyelenggaraan:</p>
-                            <div class="d-flex gap-2">
-                                <button class="btn btn-sm btn-warning flex-fill" data-bs-toggle="modal" data-bs-target="#modalBackup">
-                                    <i class="bi bi-download me-1"></i>Backup
+                    <div class="col-md-3">
+                        <div class="card h-100 border-0 shadow-sm">
+                            <div class="card-header bg-danger text-white fw-bold small">OLAHRAGAWATI (P12)</div>
+                            <div class="card-body py-3 d-flex flex-column justify-content-center" id="winner-P12">
+                                <h5 class="text-muted fst-italic fs-6">Belum Dikira</h5>
+                            </div>
+                            <div class="card-footer bg-white border-0 p-2" id="stats-P12"></div>
+                             <div class="p-2 border-top">
+                                <button id="btn-olahragawan-P12" class="btn btn-sm btn-outline-danger w-100 fw-bold">
+                                    <i class="bi bi-calculator me-1"></i> Kira P12
                                 </button>
-                                <button class="btn btn-sm btn-secondary flex-fill" data-bs-toggle="modal" data-bs-target="#modalRestore">
-                                    <i class="bi bi-upload me-1"></i>Restore
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-md-3">
+                        <div class="card h-100 border-0 shadow-sm">
+                            <div class="card-header bg-secondary text-white fw-bold small">HARAPAN (LELAKI)</div>
+                            <div class="card-body py-3 d-flex flex-column justify-content-center" id="winner-harapan-L">
+                                <h5 class="text-muted fst-italic fs-6">Belum Dikira</h5>
+                            </div>
+                            <div class="card-footer bg-white border-0 p-2" id="stats-harapan-L"></div>
+                             <div class="p-2 border-top">
+                                <button id="btn-harapan-L" class="btn btn-sm btn-outline-secondary w-100 fw-bold">
+                                    <i class="bi bi-calculator me-1"></i> Kira Harapan L
                                 </button>
-                                <button class="btn btn-sm btn-danger flex-fill" data-bs-toggle="modal" data-bs-target="#modalPadam">
-                                    <i class="bi bi-trash me-1"></i>Reset
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-md-3">
+                        <div class="card h-100 border-0 shadow-sm">
+                            <div class="card-header bg-secondary text-white fw-bold small">HARAPAN (PEREMPUAN)</div>
+                            <div class="card-body py-3 d-flex flex-column justify-content-center" id="winner-harapan-P">
+                                <h5 class="text-muted fst-italic fs-6">Belum Dikira</h5>
+                            </div>
+                            <div class="card-footer bg-white border-0 p-2" id="stats-harapan-P"></div>
+                             <div class="p-2 border-top">
+                                <button id="btn-harapan-P" class="btn btn-sm btn-outline-secondary w-100 fw-bold">
+                                    <i class="bi bi-calculator me-1"></i> Kira Harapan P
                                 </button>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <div class="col-lg-6 mb-4">
-                    <div class="card shadow-sm h-100">
-                        <div class="card-header bg-white fw-bold">
-                            <i class="bi bi-file-earmark-spreadsheet me-2 text-success"></i>Import Data Pukal
-                        </div>
-                        <div class="card-body">
-                            <p class="text-muted small">Muat naik fail CSV untuk mengemaskini rekod kejohanan terdahulu.</p>
-                            <div class="alert alert-light border small">
-                                <strong>Format CSV:</strong><br>
-                                <code>REKOD, ACARA, KATEGORI, TAHUN, NAMA</code>
-                            </div>
-                            <button class="btn btn-success w-100" data-bs-toggle="modal" data-bs-target="#modalCSV">
-                                <i class="bi bi-cloud-upload me-2"></i>Muat Naik CSV Rekod
+                <div class="mt-4">
+                    <h6 class="fw-bold mb-2">Senarai Top 20 Pungutan Pingat Individu</h6>
+                    <div class="table-responsive bg-white rounded shadow-sm" style="max-height: 300px; overflow-y: auto;">
+                        <table class="table table-sm table-hover table-striped mb-0 text-center align-middle small" id="table-ranking-full">
+                            <thead class="table-dark sticky-top">
+                                <tr>
+                                    <th>#</th>
+                                    <th class="text-start">Nama</th>
+                                    <th>Kat</th>
+                                    <th>Rumah</th>
+                                    <th>Rekod</th>
+                                    <th class="text-warning">Emas</th>
+                                    <th class="text-secondary">Perak</th>
+                                    <th style="color:#cd7f32">Gangsa</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td colspan="8" class="text-muted py-3">Klik mana-mana butang "Kira" di atas.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-4 mb-5">
+            <div class="col-md-6">
+                <div class="card h-100 border-warning">
+                    <div class="card-header bg-warning text-dark fw-bold">
+                        <i class="bi bi-database-gear me-2"></i>Pengurusan Data
+                    </div>
+                    <div class="card-body">
+                        <p class="card-text small">Import data peserta dari fail CSV atau padam semua data untuk mulakan kejohanan baru.</p>
+                        <div class="d-grid gap-2">
+                             <button class="btn btn-outline-dark btn-sm" data-bs-toggle="modal" data-bs-target="#modalCSV">
+                                <i class="bi bi-file-earmark-spreadsheet me-2"></i>Import Peserta (CSV)
+                            </button>
+                            <button class="btn btn-outline-danger btn-sm" id="btn-reset-system" data-bs-toggle="modal" data-bs-target="#modalPadam">
+                                <i class="bi bi-trash me-2"></i>Reset Keseluruhan Sistem
                             </button>
                         </div>
                     </div>
                 </div>
             </div>
             
-            <div id="house-list-container" class="mt-2"></div>
-
+            <div class="col-md-6">
+                <div class="card h-100 border-info">
+                    <div class="card-header bg-info text-white fw-bold">
+                        <i class="bi bi-gear-wide-connected me-2"></i>Tetapan Sistem
+                    </div>
+                    <div class="card-body">
+                        <p class="card-text small">Tetapan tahun kejohanan dan konfigurasi rumah sukan.</p>
+                         <div class="d-flex align-items-center justify-content-between p-2 bg-light rounded mb-2">
+                            <span class="fw-bold">Tahun Aktif:</span>
+                            <span class="badge bg-primary fs-6">2024</span>
+                        </div>
+                        <button class="btn btn-outline-secondary btn-sm w-100 disabled">
+                            <i class="bi bi-sliders me-2"></i>Konfigurasi Lanjut (Akan Datang)
+                        </button>
+                    </div>
+                </div>
+            </div>
         </div>
     `;
 
-    contentArea.innerHTML = html;
+    // Kita boleh panggil fungsi kemaskini statistik dashboard ringkas di sini jika ada
+    // updateDashboardStats(); 
+}
 
     // --- BIND EVENT LISTENERS UNTUK DASHBOARD ---
 
@@ -1700,6 +1749,7 @@ function updateWinnerCard(idTitle, idStats, data) {
     }
 }
 // End of File
+
 
 
 
