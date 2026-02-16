@@ -388,7 +388,6 @@ async function renderSetupDashboard() {
     `;
 
     contentArea.innerHTML = html;
-}
 
     // --- BIND EVENT LISTENERS UNTUK DASHBOARD ---
 
@@ -1792,6 +1791,7 @@ function updateWinnerCard(idTitle, idStats, data) {
     }
 }
 // End of File
+
 
 
 
