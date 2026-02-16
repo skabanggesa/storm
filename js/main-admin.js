@@ -1511,16 +1511,21 @@ document.getElementById('btn-proses-csv')?.addEventListener('click', async () =>
 });
 
 // ==============================================================================
-// BAHAGIAN L: EVENT LISTENER PUSAT (GLOBAL CLICK HANDLER)
+// BAHAGIAN K: EVENT LISTENER PUSAT (GLOBAL CLICK HANDLER)
 // ==============================================================================
 
 document.addEventListener('click', async (e) => {
-    
+
+    // Senarai ID butang pengira
+    const calcBtns = ['btn-olahragawan-L12', 'btn-olahragawan-P12', 'btn-harapan-L', 'btn-harapan-P'];
+    const targetBtn = e.target.closest('button'); // Cari butang terdekat
+
     // --- 4. LOGIK KIRA OLAHRAGAWAN/TI ---
-    // Menggunakan .closest() supaya ia mengesan klik walaupun pada ikon di dalam butang
-    if(e.target.closest('#btn-kira-olahragawan')) {
+    // Jika butang yang ditekan adalah salah satu daripada 4 ID di atas
+    if(targetBtn && calcBtns.includes(targetBtn.id)) {
         e.preventDefault();
-        await kiraStatistikPemenang();
+        // Kita hantar butang yang ditekan ke fungsi supaya boleh buat effect 'loading' pada butang tu
+        await kiraStatistikPemenang(targetBtn);
     }
 
 });
@@ -1536,24 +1541,23 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ==============================================================================
-// BAHAGIAN N: LOGIK OLAHRAGAWAN & STATISTIK (HIERARKI: REKOD > EMAS > PERAK > GANGSA)
+// BAHAGIAN N: LOGIK OLAHRAGAWAN & STATISTIK
 // ==============================================================================
 
-async function kiraStatistikPemenang() {
-    const btn = document.getElementById('btn-kira-olahragawan');
-    const originalText = btn.innerHTML;
+async function kiraStatistikPemenang(clickedBtn) {
+    // Simpan teks asal butang (cth: "Kira L12")
+    const originalText = clickedBtn.innerHTML;
     
-    // UI Loading
-    btn.disabled = true; 
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Mengira...';
+    // UI Loading pada butang yang ditekan sahaja
+    clickedBtn.disabled = true; 
+    clickedBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
 
     try {
-        console.log("Memulakan pengiraan statistik Olahragawan...");
+        console.log("Memulakan pengiraan statistik...");
         
-        // 1. Tarik SEMUA acara dari database
+        // 1. Tarik SEMUA acara dari database (Kita tarik semua supaya data tepat & sinkroni)
         const eventsSnap = await getDocs(collection(db, "kejohanan", tahunAktif, "acara"));
         
-        // Objek untuk kumpul statistik: { idPeserta: { nama, rumah, kat, emas, perak, gangsa, rekod } }
         let allPesertaStats = {}; 
 
         // Loop melalui setiap acara
@@ -1561,25 +1565,24 @@ async function kiraStatistikPemenang() {
             const ev = evDoc.data();
             const evId = evDoc.id;
 
-            // Tarik saringan untuk acara ini
+            // Tarik saringan
             const heatSnap = await getDocs(collection(db, "kejohanan", tahunAktif, "acara", evId, "saringan"));
             
             heatSnap.forEach(hDoc => {
                 const h = hDoc.data();
                 
-                // KITA HANYA KIRA KEPUTUSAN ACARA AKHIR YANG SUDAH SELESAI
+                // HANYA KIRA KEPUTUSAN AKHIR YANG SELESAI
                 if(h.jenis === 'akhir' && h.status === 'selesai' && h.peserta && Array.isArray(h.peserta)) {
                     
                     h.peserta.forEach(p => {
-                        // Skip jika tiada ID atau Kedudukan 0 (peserta tidak tamat/DQ)
                         if(!p.idPeserta || !p.kedudukan) return;
                         
-                        // Initialize data peserta jika belum ada dalam memori
+                        // Init data peserta
                         if(!allPesertaStats[p.idPeserta]) {
                             allPesertaStats[p.idPeserta] = {
                                 nama: p.nama,
                                 rumah: p.idRumah || '-',
-                                kategori: ev.kategori, // Kategori diambil dari acara (cth: L12, P10)
+                                kategori: ev.kategori, 
                                 emas: 0, 
                                 perak: 0, 
                                 gangsa: 0, 
@@ -1587,61 +1590,56 @@ async function kiraStatistikPemenang() {
                             };
                         }
 
-                        // Logik Tambah Pingat
+                        // Logik Pingat
                         if(p.kedudukan === 1) allPesertaStats[p.idPeserta].emas++;
                         else if(p.kedudukan === 2) allPesertaStats[p.idPeserta].perak++;
                         else if(p.kedudukan === 3) allPesertaStats[p.idPeserta].gangsa++;
 
-                        // Logik Tambah Rekod (Flag 'pecahRekod' datang dari fungsi Simpan Keputusan)
+                        // Logik Rekod
                         if(p.pecahRekod === true) allPesertaStats[p.idPeserta].rekod++;
                     });
                 }
             });
         }
 
-        // 2. Fungsi Sorting Custom (Rekod > Emas > Perak > Gangsa)
+        // 2. Fungsi Sorting (Rekod > Emas > Perak > Gangsa)
         const sortWinners = (list) => {
             return list.sort((a, b) => {
-                if(b.rekod !== a.rekod) return b.rekod - a.rekod; // 1. Rekod Paling Utama
-                if(b.emas !== a.emas) return b.emas - a.emas;     // 2. Emas
-                if(b.perak !== a.perak) return b.perak - a.perak; // 3. Perak
-                return b.gangsa - a.gangsa;                       // 4. Gangsa
+                if(b.rekod !== a.rekod) return b.rekod - a.rekod;
+                if(b.emas !== a.emas) return b.emas - a.emas;     
+                if(b.perak !== a.perak) return b.perak - a.perak; 
+                return b.gangsa - a.gangsa;                       
             });
         };
 
-        // Tukar object ke array untuk sorting
         const statsArray = Object.values(allPesertaStats);
         
-        // 3. Cari Pemenang Ikut Kategori Yang Ditetapkan
+        // 3. KEMASKINI SEMUA KAD PEMENANG SERENTAK
+        // (Walaupun tekan satu butang, kita update semua supaya data sentiasa latest)
 
-        // A. Olahragawan 12T (L12 Sahaja)
-        const calonL12 = statsArray.filter(p => p.kategori === 'L12');
-        const winnerL12 = sortWinners(calonL12)[0];
+        // A. Olahragawan 12T (L12)
+        const winnerL12 = sortWinners(statsArray.filter(p => p.kategori === 'L12'))[0];
         updateWinnerCard('winner-L12', 'stats-L12', winnerL12);
 
-        // B. Olahragawati 12T (P12 Sahaja)
-        const calonP12 = statsArray.filter(p => p.kategori === 'P12');
-        const winnerP12 = sortWinners(calonP12)[0];
+        // B. Olahragawati 12T (P12)
+        const winnerP12 = sortWinners(statsArray.filter(p => p.kategori === 'P12'))[0];
         updateWinnerCard('winner-P12', 'stats-P12', winnerP12);
 
-        // C. Olahragawan Harapan (Gabungan L9 & L10)
-        const calonHarapanL = statsArray.filter(p => ['L9','L10'].includes(p.kategori));
-        const winnerHarapanL = sortWinners(calonHarapanL)[0];
+        // C. Olahragawan Harapan (L9 & L10)
+        const winnerHarapanL = sortWinners(statsArray.filter(p => ['L9','L10'].includes(p.kategori)))[0];
         updateWinnerCard('winner-harapan-L', 'stats-harapan-L', winnerHarapanL);
 
-        // D. Olahragawati Harapan (Gabungan P9 & P10)
-        const calonHarapanP = statsArray.filter(p => ['P9','P10'].includes(p.kategori));
-        const winnerHarapanP = sortWinners(calonHarapanP)[0];
+        // D. Olahragawati Harapan (P9 & P10)
+        const winnerHarapanP = sortWinners(statsArray.filter(p => ['P9','P10'].includes(p.kategori)))[0];
         updateWinnerCard('winner-harapan-P', 'stats-harapan-P', winnerHarapanP);
 
-        // 4. Paparkan Jadual Penuh (Top 20 Keseluruhan)
-        // Kita sort semua peserta tanpa mengira kategori untuk ranking umum
-        const allSorted = sortWinners(statsArray).slice(0, 20); // Ambil Top 20
+        // 4. Update Jadual Top 20 (Jika wujud)
+        const allSorted = sortWinners(statsArray).slice(0, 20);
         const tbody = document.querySelector('#table-ranking-full tbody');
         
         if(tbody) {
             if(allSorted.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="8" class="text-center py-3 text-muted">Tiada data keputusan dijumpai.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="8" class="text-center py-3 text-muted">Tiada data.</td></tr>`;
             } else {
                 tbody.innerHTML = allSorted.map((p, i) => `
                     <tr>
@@ -1658,47 +1656,18 @@ async function kiraStatistikPemenang() {
             }
         }
 
-        alert("Pengiraan statistik selesai!");
+        alert("Statistik berjaya dikemaskini!");
 
     } catch(e) {
         console.error("Ralat Pengiraan:", e);
-        alert("Ralat Pengiraan: " + e.message);
+        alert("Ralat: " + e.message);
     } finally {
-        btn.disabled = false; 
-        btn.innerHTML = originalText;
-    }
-}
-
-// Fungsi Helper untuk Update Kad HTML Pemenang
-function updateWinnerCard(idTitle, idStats, data) {
-    const elTitle = document.getElementById(idTitle);
-    const elStats = document.getElementById(idStats);
-
-    if(!elTitle || !elStats) return;
-
-    if(data) {
-        // Jika ada pemenang
-        elTitle.innerHTML = `
-            <h4 class="mb-0 fw-bold text-primary">${data.nama}</h4>
-            <div class="text-uppercase text-muted fw-bold small mt-1">${data.rumah}</div>
-        `;
-        elStats.innerHTML = `
-            <div class="d-flex justify-content-center gap-2 mt-3">
-                <span class="badge bg-danger rounded-pill px-3 py-2 border border-white shadow-sm">Rekod: ${data.rekod}</span>
-                <span class="badge bg-warning text-dark rounded-pill px-3 py-2 border border-white shadow-sm">Emas: ${data.emas}</span>
-            </div>
-            <div class="d-flex justify-content-center gap-2 mt-2">
-                <span class="badge bg-secondary rounded-pill px-2">Perak: ${data.perak}</span>
-                <span class="badge rounded-pill px-2" style="background:#cd7f32">Gangsa: ${data.gangsa}</span>
-            </div>
-        `;
-    } else {
-        // Jika tiada data
-        elTitle.innerHTML = `<h5 class="mb-0 text-muted fst-italic">Tiada Calon</h5>`;
-        elStats.innerHTML = `<small class="text-muted">Belum ada pingat dimenangi.</small>`;
+        clickedBtn.disabled = false; 
+        clickedBtn.innerHTML = originalText;
     }
 }
 // End of File
+
 
 
 
