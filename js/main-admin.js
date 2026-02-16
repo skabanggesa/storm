@@ -1511,6 +1511,21 @@ document.getElementById('btn-proses-csv')?.addEventListener('click', async () =>
 });
 
 // ==============================================================================
+// BAHAGIAN K-L: EVENT LISTENER PUSAT (GLOBAL CLICK HANDLER)
+// ==============================================================================
+
+document.addEventListener('click', async (e) => {
+    
+    // --- 4. LOGIK KIRA OLAHRAGAWAN/TI ---
+    // Menggunakan .closest() supaya ia mengesan klik walaupun pada ikon di dalam butang
+    if(e.target.closest('#btn-kira-olahragawan')) {
+        e.preventDefault();
+        await kiraStatistikPemenang();
+    }
+
+});
+
+// ==============================================================================
 // BAHAGIAN L: INIT
 // ==============================================================================
 
@@ -1684,4 +1699,5 @@ function updateWinnerCard(idTitle, idStats, data) {
     }
 }
 // End of File
+
 
