@@ -158,7 +158,6 @@ function setActiveMenu(activeId) {
 // ==============================================================================
 // BAHAGIAN C: DASHBOARD UTAMA & SETUP (STATISTIK)
 // ==============================================================================
-
 /**
  * Memaparkan papan pemuka (dashboard) utama.
  * Mengandungi statistik ringkas dan menu utiliti sistem.
@@ -166,343 +165,176 @@ function setActiveMenu(activeId) {
 // ==============================================================================
 
 // BAHAGIAN F: UI DASHBOARD UTAMA & SETUP (VERSI PENUH)
-
 // ==============================================================================
 
-
-
 async function renderSetupDashboard() {
-
     const contentArea = document.getElementById('content-area'); // Pastikan ID ini betul ikut HTML anda (content-area atau main-content)
 
-    
-
     // Paparan Loading Sementara
-
     contentArea.innerHTML = `<div class="text-center py-5"><div class="spinner-border text-primary" role="status"></div><p class="mt-2">Memuatkan Dashboard...</p></div>`;
 
-
-
     // 1. Dapatkan statistik ringkas (count)
-
     let stats = {
-
         totalAcara: 0,
-
         totalPeserta: 0,
-
         totalRumah: 4
-
     };
-
-
-
     try {
 
         // Kira Acara
-
         const acaraSnap = await getDocs(collection(db, "kejohanan", tahunAktif, "acara"));
-
         stats.totalAcara = acaraSnap.size;
 
-
-
         // Kira Peserta 
-
         const pesertaSnap = await getDocs(collection(db, "kejohanan", tahunAktif, "peserta"));
-
         stats.totalPeserta = pesertaSnap.size;
 
-
-
     } catch (e) {
-
         console.error("Gagal memuatkan statistik:", e);
-
     }
 
-
-
     // 2. Jana HTML Dashboard
-
     const html = `
-
         <div class="container-fluid animate__animated animate__fadeIn">
-
-            
-
             <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-
                 <h1 class="h2">Dashboard & Tetapan (${tahunAktif})</h1>
-
                 <div class="btn-toolbar mb-2 mb-md-0">
-
                     <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print()">
-
                         <i class="bi bi-printer me-1"></i> Cetak Paparan
-
                     </button>
-
                 </div>
-
             </div>
 
-
-
             <div class="row mb-4">
-
                 <div class="col-md-4">
-
                     <div class="card shadow-sm border-0 bg-primary text-white h-100">
-
                         <div class="card-body d-flex align-items-center">
-
                             <div class="display-4 me-3"><i class="bi bi-people-fill"></i></div>
-
                             <div>
 
                                 <h5 class="card-title mb-0">Jumlah Atlet</h5>
-
                                 <h2 class="fw-bold mb-0">${stats.totalPeserta}</h2>
-
                             </div>
-
                         </div>
-
                     </div>
-
                 </div>
-
                 <div class="col-md-4">
-
                     <div class="card shadow-sm border-0 bg-success text-white h-100">
-
                         <div class="card-body d-flex align-items-center">
-
                             <div class="display-4 me-3"><i class="bi bi-trophy-fill"></i></div>
-
                             <div>
-
                                 <h5 class="card-title mb-0">Jumlah Acara</h5>
-
                                 <h2 class="fw-bold mb-0">${stats.totalAcara}</h2>
-
                             </div>
-
                         </div>
-
                     </div>
-
                 </div>
 
                 <div class="col-md-4">
-
                     <div class="card shadow-sm border-0 bg-info text-white h-100">
-
                         <div class="card-body d-flex align-items-center">
-
                             <div class="display-4 me-3"><i class="bi bi-house-door-fill"></i></div>
-
                             <div>
 
                                 <h5 class="card-title mb-0">Rumah Sukan</h5>
-
                                 <h2 class="fw-bold mb-0">${stats.totalRumah}</h2>
-
                             </div>
-
                         </div>
-
                     </div>
-
                 </div>
-
             </div>
 
-
-
             <div class="card shadow-sm mb-4 border-primary border-2">
-
                 <div class="card-header bg-white py-3">
-
                     <h5 class="mb-0 text-primary fw-bold"><i class="bi bi-person-badge-fill me-2"></i>Anugerah Khas Individu</h5>
-
                 </div>
-
                 <div class="card-body bg-light">
-
                     <div class="row text-center g-3">
-
                         
-
                         <div class="col-md-3">
-
                             <div class="card h-100 border-0 shadow-sm">
-
                                 <div class="card-header bg-dark text-white fw-bold small">OLAHRAGAWAN (L12)</div>
-
                                 <div class="card-body py-3 d-flex flex-column justify-content-center" id="winner-L12">
-
                                     <h5 class="text-muted fst-italic fs-6">Belum Dikira</h5>
-
                                 </div>
-
                                 <div class="card-footer bg-white border-0 p-2" id="stats-L12"></div>
-
                                 <div class="p-2 border-top">
-
                                     <button id="btn-olahragawan-L12" class="btn btn-sm btn-outline-dark w-100 fw-bold">
-
                                         <i class="bi bi-calculator me-1"></i> Kira L12
-
                                     </button>
-
                                 </div>
-
                             </div>
-
                         </div>
 
-
-
                         <div class="col-md-3">
-
                             <div class="card h-100 border-0 shadow-sm">
-
                                 <div class="card-header bg-danger text-white fw-bold small">OLAHRAGAWATI (P12)</div>
-
                                 <div class="card-body py-3 d-flex flex-column justify-content-center" id="winner-P12">
-
                                     <h5 class="text-muted fst-italic fs-6">Belum Dikira</h5>
-
                                 </div>
-
                                 <div class="card-footer bg-white border-0 p-2" id="stats-P12"></div>
-
                                  <div class="p-2 border-top">
-
                                     <button id="btn-olahragawan-P12" class="btn btn-sm btn-outline-danger w-100 fw-bold">
-
                                         <i class="bi bi-calculator me-1"></i> Kira P12
-
                                     </button>
-
                                 </div>
-
                             </div>
-
                         </div>
 
-
-
                         <div class="col-md-3">
-
                             <div class="card h-100 border-0 shadow-sm">
-
                                 <div class="card-header bg-secondary text-white fw-bold small">HARAPAN (LELAKI)</div>
-
                                 <div class="card-body py-3 d-flex flex-column justify-content-center" id="winner-harapan-L">
-
                                     <h5 class="text-muted fst-italic fs-6">Belum Dikira</h5>
-
                                 </div>
-
                                 <div class="card-footer bg-white border-0 p-2" id="stats-harapan-L"></div>
-
                                  <div class="p-2 border-top">
-
                                     <button id="btn-harapan-L" class="btn btn-sm btn-outline-secondary w-100 fw-bold">
-
                                         <i class="bi bi-calculator me-1"></i> Kira Harapan L
-
                                     </button>
-
                                 </div>
-
                             </div>
-
                         </div>
-
-
 
                         <div class="col-md-3">
-
                             <div class="card h-100 border-0 shadow-sm">
-
                                 <div class="card-header bg-secondary text-white fw-bold small">HARAPAN (PEREMPUAN)</div>
-
                                 <div class="card-body py-3 d-flex flex-column justify-content-center" id="winner-harapan-P">
-
                                     <h5 class="text-muted fst-italic fs-6">Belum Dikira</h5>
-
                                 </div>
-
                                 <div class="card-footer bg-white border-0 p-2" id="stats-harapan-P"></div>
-
                                  <div class="p-2 border-top">
-
                                     <button id="btn-harapan-P" class="btn btn-sm btn-outline-secondary w-100 fw-bold">
-
                                         <i class="bi bi-calculator me-1"></i> Kira Harapan P
-
                                     </button>
-
                                 </div>
-
                             </div>
-
                         </div>
-
                     </div>
-
-
 
                     <div class="mt-4">
-
                         <h6 class="fw-bold mb-2">Senarai Top 20 Pungutan Pingat Individu</h6>
-
                         <div class="table-responsive bg-white rounded shadow-sm" style="max-height: 300px; overflow-y: auto;">
-
                             <table class="table table-sm table-hover table-striped mb-0 text-center align-middle small" id="table-ranking-full">
-
                                 <thead class="table-dark sticky-top">
-
                                     <tr>
-
                                         <th>#</th>
-
                                         <th class="text-start">Nama</th>
-
                                         <th>Kat</th>
-
                                         <th>Rumah</th>
-
                                         <th>Rekod</th>
-
                                         <th class="text-warning">Emas</th>
-
                                         <th class="text-secondary">Perak</th>
-
                                         <th style="color:#cd7f32">Gangsa</th>
-
                                     </tr>
-
                                 </thead>
-
                                 <tbody>
-
                                     <tr><td colspan="8" class="text-muted py-3">Klik mana-mana butang "Kira" di atas.</td></tr>
-
                                 </tbody>
-
                             </table>
-
                         </div>
-
                     </div>
-
                 </div>
-
             </div>
 
             <div class="row mb-5">
@@ -1944,6 +1776,7 @@ function updateWinnerCard(idTitle, idStats, data) {
     }
 }
 // End of File
+
 
 
 
