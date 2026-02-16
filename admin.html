@@ -116,34 +116,48 @@
                     <button class="list-group-item list-group-item-action" id="menu-keputusan">
                         <i class="bi bi-pencil-square me-2"></i> 3. Input Keputusan
                     </button>
-
                     <a href="keputusan.html" class="list-group-item list-group-item-action text-primary fw-bold border-top mt-1">
                         <i class="bi bi-trophy-fill me-2"></i> 4. Lihat Keputusan Penuh
                     </a>
                     
                     <hr class="my-2">
-                    
-<div class="p-2">
-    <label class="form-label small fw-bold text-muted">Olahragawan/Olahragawati:</label>
+           <div class="p-2">
+    <label class="form-label small fw-bold text-muted">Anugerah Khas:</label>
     
-    <button class="btn btn-sm btn-outline-primary w-100 text-start mb-2" id="btn-olahragawan-L12">
+    <button class="btn btn-sm btn-outline-primary w-100 text-start mb-2" onclick="paparPemenang('L', ['L1'], 'Olahragawan 12 Tahun')">
         <i class="bi bi-gender-male me-2"></i> Olahragawan 12 Tahun
     </button>
-
-    <button class="btn btn-sm btn-outline-danger w-100 text-start mb-2" id="btn-olahragawan-P12">
+    
+    <button class="btn btn-sm btn-outline-danger w-100 text-start mb-2" onclick="paparPemenang('P', ['P1'], 'Olahragawati 12 Tahun')">
         <i class="bi bi-gender-female me-2"></i> Olahragawati 12 Tahun
     </button>
-
-    <button class="btn btn-sm btn-outline-primary w-100 text-start mb-2" id="btn-harapan-L">
+    
+    <button class="btn btn-sm btn-outline-primary w-100 text-start mb-2" onclick="paparPemenang('L', ['L2', 'L3'], 'Olahragawan Harapan')">
         <i class="bi bi-star-fill me-2"></i> Olahragawan Harapan
     </button>
-
-    <button class="btn btn-sm btn-outline-danger w-100 text-start mb-2" id="btn-harapan-P">
+    
+    <button class="btn btn-sm btn-outline-danger w-100 text-start mb-2" onclick="paparPemenang('P', ['P2', 'P3'], 'Olahragawati Harapan')">
         <i class="bi bi-star me-2"></i> Olahragawati Harapan
     </button>
 </div>
-                </div>
+
+<div class="modal fade" id="modalPemenang" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content text-center">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title" id="tajuk-anugerah">Keputusan</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
+            <div class="modal-body" id="isi-anugerah">
+                <div class="spinner-border text-primary" role="status"></div>
+                <p>Sedang mengira...</p>
+            </div>
+            <div class="modal-footer justify-content-center">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>
+            </div>
+        </div>
+    </div>
+</div>
             
             <div class="col-md-9">
                 <div id="content-area" class="card p-4 shadow-sm border-0" style="min-height: 600px;">
@@ -287,6 +301,7 @@
     </script>
 </body>
 </html>
+
 
 
 
