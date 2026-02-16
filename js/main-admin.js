@@ -1520,4 +1520,144 @@ document.addEventListener('DOMContentLoaded', () => {
     renderSetupDashboard();
 });
 
+// ==============================================================================
+// BAHAGIAN: FUNGSI OLAHRAGAWAN / OLAHRAGAWATI (LOGIK: REKOD & PINGAT SAHAJA)
+// ==============================================================================
+
+window.paparPemenang = async (jantinaSasaran, kategoriSasaran, tajukAnugerah) => {
+    // 1. Setup Modal UI
+    const modalEl = document.getElementById('modalPemenang');
+    const modalTitle = document.getElementById('tajuk-anugerah');
+    const modalBody = document.getElementById('isi-anugerah');
+    
+    const modal = new bootstrap.Modal(modalEl);
+    modalTitle.innerText = tajukAnugerah;
+    modalBody.innerHTML = `<div class="spinner-border text-primary"></div><p class="mt-2">Sedang menyemak rekod & pingat...</p>`;
+    modal.show();
+
+    try {
+        // 2. Tarik data ACARA dari Firebase
+        const acaraRef = collection(db, "kejohanan", tahunAktif, "acara");
+        const snapshot = await getDocs(acaraRef);
+        
+        let senaraiAtlet = {};
+
+        // 3. Mula Pengiraan
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            
+            // Pastikan ada pemenang
+            if (data.pemenang && Array.isArray(data.pemenang)) {
+                
+                data.pemenang.forEach((atlet, index) => {
+                    if (!atlet.nama) return;
+
+                    // A. Tapis Jantina & Kategori
+                    let kategoriMatch = false;
+                    kategoriSasaran.forEach(k => {
+                        if (data.kategori.includes(k)) kategoriMatch = true;
+                    });
+                    
+                    if (!kategoriMatch) return; 
+
+                    // B. Init Data Atlet
+                    const namaKey = atlet.nama.trim().toUpperCase();
+
+                    if (!senaraiAtlet[namaKey]) {
+                        senaraiAtlet[namaKey] = {
+                            nama: atlet.nama,
+                            pasukan: atlet.pasukan || "-",
+                            emas: 0, perak: 0, gangsa: 0, rekod: 0
+                        };
+                    }
+
+                    // C. Kira Pingat SAHAJA (Tiada mata)
+                    if (index === 0) senaraiAtlet[namaKey].emas++; 
+                    else if (index === 1) senaraiAtlet[namaKey].perak++; 
+                    else if (index === 2) senaraiAtlet[namaKey].gangsa++; 
+                    
+                    // D. Kira Rekod
+                    // Semak jika catatan mengandungi indikator rekod
+                    if (atlet.catatan) {
+                        const catatanUpper = atlet.catatan.toUpperCase();
+                        if (catatanUpper.includes("RB") || catatanUpper.includes("MR") || catatanUpper.includes("BARU")) {
+                            senaraiAtlet[namaKey].rekod++;
+                        }
+                    }
+                });
+            }
+        });
+
+        // 4. PENENTUAN JUARA (SORTING BARU)
+        let calon = Object.values(senaraiAtlet);
+        
+        calon.sort((a, b) => {
+            // Prioriti 1: Bilangan Rekod Terbanyak
+            if (b.rekod !== a.rekod) return b.rekod - a.rekod;
+
+            // Prioriti 2: Bilangan Emas Terbanyak
+            if (b.emas !== a.emas) return b.emas - a.emas;
+            
+            // Prioriti 3: Bilangan Perak Terbanyak
+            if (b.perak !== a.perak) return b.perak - a.perak;
+            
+            // Prioriti 4: Bilangan Gangsa Terbanyak
+            return b.gangsa - a.gangsa;
+        });
+
+        const juara = calon.length > 0 ? calon[0] : null;
+
+        // 5. Paparan HTML (Modal)
+        if (juara) {
+            modalBody.innerHTML = `
+                <div class="py-3">
+                    <div class="mb-3">
+                        <i class="bi bi-trophy-fill text-warning" style="font-size: 4rem;"></i>
+                    </div>
+                    
+                    <h3 class="fw-bold text-uppercase mb-1">${juara.nama}</h3>
+                    <span class="badge bg-dark fs-6 mb-4">${juara.pasukan}</span>
+
+                    <div class="row justify-content-center g-2 px-3">
+                        
+                        <div class="col-12 mb-3">
+                            <div class="card ${juara.rekod > 0 ? 'bg-primary text-white' : 'bg-light border'}">
+                                <div class="card-body py-2">
+                                    <h2 class="fw-bold mb-0 display-4">${juara.rekod}</h2>
+                                    <small class="text-uppercase fw-bold ls-1">Rekod Dipecahkan</small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-4">
+                            <div class="border border-warning bg-warning bg-opacity-10 rounded p-2">
+                                <h4 class="fw-bold mb-0 text-warning text-dark-emphasis">${juara.emas}</h4>
+                                <small class="text-muted fw-bold" style="font-size:10px">EMAS</small>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="border border-secondary bg-secondary bg-opacity-10 rounded p-2">
+                                <h4 class="fw-bold mb-0 text-secondary text-dark-emphasis">${juara.perak}</h4>
+                                <small class="text-muted fw-bold" style="font-size:10px">PERAK</small>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="border border-danger bg-danger bg-opacity-10 rounded p-2">
+                                <h4 class="fw-bold mb-0 text-danger text-dark-emphasis">${juara.gangsa}</h4>
+                                <small class="text-muted fw-bold" style="font-size:10px">GANGSA</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        } else {
+            modalBody.innerHTML = `<div class="alert alert-warning">Tiada data pemenang dijumpai untuk kategori ini.</div>`;
+        }
+
+    } catch (error) {
+        console.error(error);
+        modalBody.innerHTML = `<div class="text-danger p-3">Ralat Sistem: ${error.message}</div>`;
+    }
+};
 // End of File
+
