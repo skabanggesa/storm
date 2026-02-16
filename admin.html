@@ -16,6 +16,18 @@
             background-color: var(--light-bg);
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
+        
+        /* Sidebar Styles */
+        .sidebar {
+            height: 100vh;
+            background-color: #fff;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.05);
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 100;
+            padding-top: 20px;
+        }
         .list-group-item { 
             cursor: pointer; 
             transition: 0.2s; 
@@ -23,267 +35,308 @@
             padding: 12px 20px;
             margin-bottom: 5px;
             border-radius: 8px !important;
+            color: #636e72;
+            font-weight: 500;
         }
         .list-group-item:hover { 
             background-color: #e9ecef; 
+            color: var(--primary-blue);
         }
         .list-group-item.active { 
             background-color: var(--primary-blue) !important; 
-            box-shadow: 0 4px 10px rgba(13, 110, 253, 0.2);
-            color: white !important;
+            color: #fff !important;
         }
-        .sticky-top-card { 
-            position: sticky; 
-            top: 20px; 
-        }
-        .card {
-            border: none;
-            border-radius: 12px;
-        }
-        .res-input, .trial-input, .hj-input {
-            border: 1px solid #dee2e6;
-            font-weight: bold;
-        }
-        .res-input:focus, .trial-input:focus, .hj-input:focus {
-            background-color: #fff9c4;
-            border-color: #fbc02d;
-            box-shadow: none;
+        
+        /* Content Area */
+        main {
+            margin-left: 16.66667%; /* Offset for col-md-2 sidebar */
+            min-height: 100vh;
         }
 
-        /* --- LOGIK CETAKAN --- */
+        /* --- TAMBAHAN CSS BARU --- */
+
+        /* 1. Fix Jadual Lompat Tinggi (Sticky Columns) */
+        .table-highjump-wrapper {
+            overflow-x: auto;
+            max-width: 100%;
+            position: relative;
+        }
+        /* Header dan Cell yang perlu 'melekat' */
+        .th-fixed, .td-fixed {
+            position: sticky;
+            right: 0;
+            background-color: #fff !important; /* Tutup content belakang semasa scroll */
+            z-index: 5;
+            border-left: 2px solid #dee2e6;
+            text-align: center;
+        }
+        /* Specific Positions */
+        .col-rank-fixed {
+            right: 0;
+            width: 60px;
+            min-width: 60px;
+        }
+        .col-best-fixed {
+            right: 60px; /* Duduk sebelah Rank */
+            width: 80px;
+            min-width: 80px;
+        }
+
+        /* 2. Fix Paparan Cetak */
         @media print {
-            .d-print-none, 
-            .btn, 
-            .list-group, 
-            .input-group,
-            .modal,
-            header,
-            .sidebar-wrapper {
+            body * {
+                visibility: hidden; /* Sembunyikan semua element */
+            }
+            #content-area, #content-area * {
+                visibility: visible; /* Tunjuk area content sahaja */
+            }
+            #content-area {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                margin: 0;
+                padding: 0;
+            }
+            /* Hilangkan butang & sidebar semasa print */
+            .sidebar, .d-print-none, .btn {
                 display: none !important;
             }
-            
-            .col-md-9 {
-                width: 100% !important;
-                flex: 0 0 100% !important;
-                max-width: 100% !important;
+            main {
+                margin-left: 0 !important;
             }
-            
-            body {
-                background-color: white !important;
-            }
-            
-            .card {
-                box-shadow: none !important;
-                padding: 0 !important;
-            }
+        }
 
-            .table {
-                border: 1px solid #000 !important;
-            }
-            .table th, .table td {
-                border: 1px solid #000 !important;
-                color: black !important;
-            }
+        /* 3. Style Kad Olahragawan */
+        .card-winner {
+            transition: transform 0.2s;
+            border-left: 5px solid var(--primary-blue);
+        }
+        .card-winner:hover {
+            transform: translateY(-3px);
+        }
+        .winner-avatar {
+            width: 60px;
+            height: 60px;
+            background-color: #e9ecef;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            color: #6c757d;
         }
     </style>
 </head>
-<body class="bg-light">
+<body>
 
-    <div class="container py-4">
-        <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-3 d-print-none">
-            <div>
-                <h2 class="fw-bold text-primary mb-0">
-                    <i class="bi bi-speedometer2 me-2"></i>Panel Kawalan Admin
-                </h2>
-                <small class="text-muted text-uppercase tracking-wider">Sistem Pengurusan Kejohanan Olahraga Tahunan (KOT)</small>
+<div class="container-fluid">
+    <div class="row">
+        <nav class="col-md-2 d-md-block sidebar px-3 collapse">
+            <div class="text-center mb-4 mt-2">
+                <h5 class="fw-bold text-primary"><i class="bi bi-trophy-fill me-2"></i>KOT ADMIN</h5>
+                <small class="text-muted" id="tahun-label">Tahun: ...</small>
             </div>
-            <div class="text-end">
-                <button id="btn-logout" class="btn btn-outline-danger btn-sm fw-bold">
-                    <i class="bi bi-box-arrow-right"></i> Log Keluar
-                </button>
-            </div>
-        </div>
 
-        <div class="row">
-            <div class="col-md-3 mb-4 sidebar-wrapper d-print-none">
-                <div class="list-group shadow-sm sticky-top-card bg-white p-2 rounded">
-                    <button class="list-group-item list-group-item-action active" id="menu-setup">
-                        <i class="bi bi-gear-fill me-2"></i> 1. Setup Tahun Baru
-                    </button>
-                    <button class="list-group-item list-group-item-action" id="menu-acara">
-                        <i class="bi bi-printer me-2"></i> 2. Urus & Cetak Borang
-                    </button>
-                    <button class="list-group-item list-group-item-action" id="menu-keputusan">
-                        <i class="bi bi-pencil-square me-2"></i> 3. Input Keputusan
-                    </button>
+            <div class="list-group list-group-flush">
+                <a class="list-group-item list-group-item-action" id="menu-setup">
+                    <i class="bi bi-gear-fill me-2"></i>Setup & Database
+                </a>
+                
+                <a class="list-group-item list-group-item-action" id="menu-acara">
+                    <i class="bi bi-pencil-square me-2"></i>Keputusan Acara
+                </a>
 
-                    <a href="keputusan.html" class="list-group-item list-group-item-action text-primary fw-bold border-top mt-1">
-                        <i class="bi bi-trophy-fill me-2"></i> 4. Lihat Keputusan Penuh
-                    </a>
-                    
-                    <hr class="my-2">
-                    
-                    <div class="p-2">
-                        <label class="form-label small fw-bold text-muted">Utility & Database:</label>
-                        
-                        <button class="btn btn-sm btn-outline-secondary w-100 text-start mb-2" id="btn-muat-naik-rekod" data-bs-toggle="modal" data-bs-target="#modalCSV">
-                            <i class="bi bi-file-earmark-spreadsheet me-2"></i> Muat Naik Rekod (.csv)
-                        </button>
+                <a class="list-group-item list-group-item-action" id="menu-olahragawan">
+                    <i class="bi bi-star-fill me-2"></i>Olahragawan
+                </a>
 
-                        <button class="btn btn-sm btn-outline-primary w-100 text-start mb-2" id="btn-buka-backup" data-bs-toggle="modal" data-bs-target="#modalBackup">
-                            <i class="bi bi-cloud-download me-2"></i> Backup Data (Eksport)
-                        </button>
-
-                        <button class="btn btn-sm btn-outline-success w-100 text-start mb-2" id="btn-buka-restore" data-bs-toggle="modal" data-bs-target="#modalRestore">
-                            <i class="bi bi-cloud-upload me-2"></i> Restore Data (Import)
-                        </button>
-
-                        <button class="btn btn-sm btn-outline-danger w-100 text-start mb-2" id="btn-buka-padam" data-bs-toggle="modal" data-bs-target="#modalPadam">
-                            <i class="bi bi-trash-fill me-2"></i> Padam Data
-                        </button>
-                    </div>
-                </div>
+                <hr class="my-2">
+                
+                <a class="list-group-item list-group-item-action text-danger" id="btn-logout">
+                    <i class="bi bi-box-arrow-right me-2"></i>Log Keluar
+                </a>
             </div>
             
-            <div class="col-md-9">
-                <div id="content-area" class="card p-4 shadow-sm border-0" style="min-height: 600px;">
-                    <div class="text-center py-5 d-print-none">
-                        <div class="spinner-border text-primary mb-3"></div>
-                        <h4 class="text-secondary">Sila Tunggu...</h4>
-                        <p class="text-muted">Sistem sedang menyediakan antaramuka pengurusan.</p>
+            <div class="mt-auto text-center py-3 text-muted small">
+                &copy; Sistem KOT v2.0
+            </div>
+        </nav>
+
+        <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4 py-4">
+            
+            <div class="d-md-none d-flex justify-content-between align-items-center mb-3">
+                <h5 class="fw-bold text-primary">KOT ADMIN</h5>
+                <button class="btn btn-outline-primary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target=".sidebar">
+                    <i class="bi bi-list"></i> Menu
+                </button>
+            </div>
+
+            <div id="content-area">
+                <div class="text-center py-5">
+                    <div class="spinner-border text-primary"></div>
+                    <p class="mt-2">Memuatkan sistem...</p>
+                </div>
+            </div>
+
+            <div id="view-olahragawan" class="d-none">
+                <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+                    <h1 class="h2">Penentuan Olahragawan</h1>
+                    <div class="btn-toolbar mb-2 mb-md-0">
+                        <button class="btn btn-primary" id="btn-kira-olahragawan">
+                            <i class="bi bi-calculator me-2"></i>Kira Pemenang
+                        </button>
                     </div>
                 </div>
+
+                <div class="alert alert-info shadow-sm border-0" role="alert">
+                    <i class="bi bi-info-circle-fill me-2"></i>
+                    <strong>Kriteria Penentuan:</strong> Jumlah Rekod Baru > Emas > Perak > Gangsa.
+                </div>
+
+                <div class="row g-4">
+                    <div class="col-md-6 col-lg-6">
+                        <div class="card card-winner shadow-sm h-100 border-0">
+                            <div class="card-body">
+                                <h6 class="text-uppercase text-muted fw-bold mb-3">Olahragawan (12 Tahun)</h6>
+                                <div class="d-flex align-items-center">
+                                    <div class="winner-avatar me-3 bg-primary text-white"><i class="bi bi-gender-male"></i></div>
+                                    <div id="winner-L12">
+                                        <h5 class="mb-1">Belum Dikira</h5>
+                                        <small class="text-muted">Tekan 'Kira Pemenang'</small>
+                                    </div>
+                                </div>
+                                <hr>
+                                <div id="stats-L12" class="small text-muted">Statistik akan dipaparkan di sini.</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-md-6 col-lg-6">
+                        <div class="card card-winner shadow-sm h-100 border-0" style="border-left-color: #e83e8c;">
+                            <div class="card-body">
+                                <h6 class="text-uppercase text-muted fw-bold mb-3">Olahragawati (12 Tahun)</h6>
+                                <div class="d-flex align-items-center">
+                                    <div class="winner-avatar me-3 text-white" style="background-color: #e83e8c;"><i class="bi bi-gender-female"></i></div>
+                                    <div id="winner-P12">
+                                        <h5 class="mb-1">Belum Dikira</h5>
+                                        <small class="text-muted">Tekan 'Kira Pemenang'</small>
+                                    </div>
+                                </div>
+                                <hr>
+                                <div id="stats-P12" class="small text-muted">Statistik akan dipaparkan di sini.</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-md-6 col-lg-6">
+                        <div class="card card-winner shadow-sm h-100 border-0" style="border-left-color: #fd7e14;">
+                            <div class="card-body">
+                                <h6 class="text-uppercase text-muted fw-bold mb-3">Olahragawan Harapan (L9 & L10)</h6>
+                                <div class="d-flex align-items-center">
+                                    <div class="winner-avatar me-3 text-white" style="background-color: #fd7e14;"><i class="bi bi-person-up"></i></div>
+                                    <div id="winner-harapan-L">
+                                        <h5 class="mb-1">Belum Dikira</h5>
+                                        <small class="text-muted">-</small>
+                                    </div>
+                                </div>
+                                <hr>
+                                <div id="stats-harapan-L" class="small text-muted">Statistik akan dipaparkan di sini.</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-md-6 col-lg-6">
+                        <div class="card card-winner shadow-sm h-100 border-0" style="border-left-color: #6f42c1;">
+                            <div class="card-body">
+                                <h6 class="text-uppercase text-muted fw-bold mb-3">Olahragawati Harapan (P9 & P10)</h6>
+                                <div class="d-flex align-items-center">
+                                    <div class="winner-avatar me-3 text-white" style="background-color: #6f42c1;"><i class="bi bi-person-up"></i></div>
+                                    <div id="winner-harapan-P">
+                                        <h5 class="mb-1">Belum Dikira</h5>
+                                        <small class="text-muted">-</small>
+                                    </div>
+                                </div>
+                                <hr>
+                                <div id="stats-harapan-P" class="small text-muted">Statistik akan dipaparkan di sini.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <h5 class="mt-5 mb-3">Senarai Top 5 Keseluruhan</h5>
+                <div class="card shadow-sm border-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0" id="table-ranking-full">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>#</th>
+                                    <th>Nama</th>
+                                    <th>Kategori</th>
+                                    <th>Rumah</th>
+                                    <th class="text-center bg-danger">Rekod Baru</th>
+                                    <th class="text-center text-warning">Emas</th>
+                                    <th class="text-center text-secondary">Perak</th>
+                                    <th class="text-center" style="color:#cd7f32">Gangsa</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td colspan="8" class="text-center py-4">Data belum dikira.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div> </main>
+    </div>
+</div>
+
+<div class="modal fade" id="modalPadam" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title">ZON BAHAYA: Padam Data</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Pilih data yang ingin dipadam:</p>
+                <select class="form-select mb-3" id="select-padam-jenis">
+                    <option value="peserta">Semua Peserta</option>
+                    <option value="keputusan">Semua Keputusan (Saringan)</option>
+                    <option value="semua">PADAM SEMUA (RESET TAHUN)</option>
+                </select>
+                <div class="mb-3">
+                    <label class="form-label text-danger fw-bold">Taip <strong>SAH PADAM</strong> untuk mengesahkan:</label>
+                    <input type="text" id="input-pengesahan-padam" class="form-control border-danger" placeholder="Taip di sini...">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-light border" data-bs-dismiss="modal">Batal</button>
+                <button type="button" class="btn btn-danger disabled" id="btn-laksana-padam">Padam Sekarang</button>
             </div>
         </div>
     </div>
+</div>
 
-    <div class="modal fade" id="modalCSV" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header bg-secondary text-white">
-                    <h5 class="modal-title"><i class="bi bi-upload me-2"></i>Muat Naik Rekod Kejohanan</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="alert alert-info py-2 small">
-                        <i class="bi bi-info-circle-fill me-1"></i> Format CSV: <strong>REKOD, ACARA, KATEGORI, TAHUN, NAMA</strong>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">Pilih Fail CSV:</label>
-                        <input type="file" id="file-csv" class="form-control" accept=".csv">
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-light border" data-bs-dismiss="modal">Batal</button>
-                    <button type="button" class="btn btn-secondary" id="btn-proses-csv">Mula Proses</button>
-                </div>
-            </div>
-        </div>
-    </div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script type="module" src="js/main-admin.js"></script>
 
-    <div class="modal fade" id="modalBackup" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header bg-primary text-white">
-                    <h5 class="modal-title"><i class="bi bi-cloud-download me-2"></i>Backup Data (Eksport)</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <p class="text-muted">Fungsi ini akan memuat turun semua data (peserta, acara, keputusan) ke dalam bentuk fail <strong>.json</strong> untuk simpanan anda.</p>
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">Pilih Tahun untuk Backup:</label>
-                        <select id="select-backup-tahun" class="form-select">
-                            <option value="">-- Muat turun Semua Tahun --</option>
-                            <option value="2024">2024</option>
-                            <option value="2025">2025</option>
-                            <option value="2026">2026</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-light border" data-bs-dismiss="modal">Batal</button>
-                    <button type="button" class="btn btn-primary" id="btn-laksana-backup"><i class="bi bi-download me-1"></i> Muat Turun Backup</button>
-                </div>
-            </div>
-        </div>
-    </div>
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // Logik keselamatan untuk Modal Padam Data
+        const inputPengesahan = document.getElementById('input-pengesahan-padam');
+        const btnPadam = document.getElementById('btn-laksana-padam');
 
-    <div class="modal fade" id="modalRestore" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header bg-success text-white">
-                    <h5 class="modal-title"><i class="bi bi-cloud-upload me-2"></i>Restore Data (Import)</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="alert alert-warning py-2 small">
-                        <i class="bi bi-exclamation-triangle-fill me-1"></i> <strong>Amaran:</strong> Memuat naik fail backup (.json) akan menulis ganti (overwrite) data sedia ada di dalam pangkalan data.
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">Pilih Fail Backup (.json):</label>
-                        <input type="file" id="file-restore" class="form-control" accept=".json">
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-light border" data-bs-dismiss="modal">Batal</button>
-                    <button type="button" class="btn btn-success" id="btn-laksana-restore"><i class="bi bi-upload me-1"></i> Muat Naik Data</button>
-                </div>
-            </div>
-        </div>
-    </div>
+        if(inputPengesahan && btnPadam) {
+            inputPengesahan.addEventListener('keyup', (e) => {
+                if (e.target.value === 'SAH PADAM') {
+                    btnPadam.classList.remove('disabled');
+                } else {
+                    btnPadam.classList.add('disabled');
+                }
+            });
+        }
+    });
+</script>
 
-    <div class="modal fade" id="modalPadam" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content border-danger">
-                <div class="modal-header bg-danger text-white">
-                    <h5 class="modal-title"><i class="bi bi-trash-fill me-2"></i>Padam Data</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <p class="text-danger fw-bold">TINDAKAN INI TIDAK BOLEH DIKEMBALIKAN!</p>
-                    <p class="text-muted small">Sila pastikan anda telah membuat <strong>Backup Data</strong> terlebih dahulu sebelum melakukan pemadaman.</p>
-                    
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">Pilih Data Untuk Dipadam:</label>
-                        <select id="select-padam-jenis" class="form-select mb-2">
-                            <option value="peserta">Padam Semua Peserta Sahaja</option>
-                            <option value="keputusan">Padam Semua Keputusan Sahaja</option>
-                            <option value="semua">Padam KESELURUHAN Data Kejohanan</option>
-                        </select>
-                    </div>
-
-                    <div class="mb-2">
-                        <label class="form-label small">Sila taip <strong>SAH PADAM</strong> untuk mengesahkan:</label>
-                        <input type="text" id="input-pengesahan-padam" class="form-control border-danger" placeholder="Taip di sini...">
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-light border" data-bs-dismiss="modal">Batal</button>
-                    <button type="button" class="btn btn-danger disabled" id="btn-laksana-padam">Padam Sekarang</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script type="module" src="js/main-admin.js"></script>
-
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            // Logik keselamatan untuk Modal Padam Data
-            const inputPengesahan = document.getElementById('input-pengesahan-padam');
-            const btnPadam = document.getElementById('btn-laksana-padam');
-
-            if(inputPengesahan && btnPadam) {
-                inputPengesahan.addEventListener('keyup', (e) => {
-                    if (e.target.value === 'SAH PADAM') {
-                        btnPadam.classList.remove('disabled');
-                    } else {
-                        btnPadam.classList.add('disabled');
-                    }
-                });
-            }
-        });
-    </script>
 </body>
 </html>
