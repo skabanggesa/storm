@@ -1789,3 +1789,4 @@ function updateWinnerCard(idTitle, idStats, data) {
 
 
 
+
