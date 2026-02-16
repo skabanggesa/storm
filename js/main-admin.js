@@ -1,885 +1,1523 @@
 /**
  * ==============================================================================
- * SISTEM PENGURUSAN KEJOHANAN OLAHRAGA TAHUNAN (KOT)
- * FAIL: main-admin.js (VERSION: STANDALONE FULL)
- * PENERANGAN:
- * Fail ini mengandungi KESELURUHAN logik sistem Admin.
- * Ia tidak bergantung kepada modul luaran untuk mengelakkan ralat 'Import Missing'.
- * * KANDUNGAN:
- * 1. Config & Imports (Firebase)
- * 2. Utiliti Database (Internal Functions)
- * 3. Logik Setup & Init
- * 4. Pengurusan Acara & Saringan
- * 5. Input Keputusan (Balapan, Padang, Lompat Tinggi)
- * 6. Dashboard Olahragawan
- * 7. System Initialization (Fix Loading Screen)
+ * SISTEM PENGURUSAN KEJOHANAN OLAHRAGA TAHUNAN (KOT) - VERSI PRO 2.0
  * ==============================================================================
+ * * FAIL: main-admin.js
+ * PENERANGAN:
+ * Fail ini adalah "otak" utama untuk panel pentadbir (Admin Dashboard).
+ * Ia mengawal semua interaksi UI, aliran data ke Firebase, dan logik perniagaan
+ * untuk pengurusan kejohanan.
+ * * KEMASKINI TERKINI:
+ * 1. Penggabungan Modul: Menu 'Input Keputusan' telah diserap masuk ke dalam 'Urus Acara'.
+ * 2. Input Data: Admin kini boleh memasukkan keputusan terus dari paparan saringan.
+ * 3. Mod Cetakan: Sistem kini mempunyai butang 'Preview Cetak' untuk menyembunyikan
+ * kotak input semasa mencetak borang rasmi.
+ * 4. Verbose Logging: Penambahan sistem log dalaman untuk pemantauan ralat.
+ * * ==============================================================================
  */
 
 // ==============================================================================
-// BAHAGIAN 1: IMPORT LIBRARY (Hanya Firebase)
+// BAHAGIAN A: IMPORT MODUL DAN PENGISYTIHARAN PEMBOLEHUBAH
 // ==============================================================================
 
-import { db } from './firebase-config.js'; // Pastikan fail ini wujud
+import { 
+    initializeTournament, 
+    getEventsReadyForResults, 
+    getHeatsData, 
+    saveHeatResults,
+    getEventDetail,
+    saveBulkRecords,
+    generateHeats,
+    ACARA_PADANG,
+    ACARA_KHAS
+} from './modules/admin.js';
 
-// Import fungsi Firestore dari CDN
+import { highJumpLogic } from './modules/highjump-logic.js'; 
+import { db } from './firebase-config.js';
+
+// Import fungsi-fungsi Firestore dari URL CDN
 import { 
     doc, 
     getDoc, 
     updateDoc, 
     setDoc, 
     collection, 
-    getDocs, 
-    writeBatch, 
-    deleteDoc, 
     query, 
-    where,
-    addDoc,
-    serverTimestamp,
+    where, 
+    getDocs,
+    writeBatch,
+    deleteDoc,
     orderBy,
     limit
 } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
 
-// ==============================================================================
-// BAHAGIAN 2: STATE MANAGEMENT & VARIABLES
-// ==============================================================================
+// --- PEMBOLEHUBAH GLOBAL ---
 
-let tahunAktif = sessionStorage.getItem("tahun_aktif") || new Date().getFullYear().toString(); 
+/**
+ * Tahun aktif yang sedang diuruskan.
+ * Diambil dari sessionStorage atau tahun semasa.
+ */
+let tahunAktif = sessionStorage.getItem("tahun_aktif") || new Date().getFullYear().toString();
+
+/**
+ * Pembolehubah sementara untuk menyimpan data saringan yang sedang dibuka.
+ * Digunakan untuk tujuan 'cache' sebelum disimpan ke database.
+ */
+let currentHeatDataCache = null;
+
+/**
+ * ID elemen utama di mana kandungan akan dipaparkan.
+ */
 const contentArea = document.getElementById('content-area');
 
-// Variable Global untuk menyimpan data sementara
-window.currentHeatData = null;      
-window.currentHeatId = null;        
-window.currentEventId = null;       
-window.currentLabel = null;         
-window.currentMode = 'input';       
-window.currentRecordData = null;    
+// Inisialisasi awal sistem
+console.group("Sistem STORMS (Admin) - Inisialisasi");
+console.info("Masa Mula:", new Date().toLocaleString());
+console.info("Tahun Aktif:", tahunAktif);
+console.groupEnd();
 
-// Configuration Constants
-const ACARA_PADANG = [
-    "LOMPAT JAUH", "LONTAR PELURU", "REJAM LEMBING", "LEMPAR CAKERA", "LOMPAT KIJANG"
-];
-const ACARA_LOMPAT_TINGGI = ["LOMPAT TINGGI"];
+// Menyuntik CSS Khas untuk Cetakan secara Dinamik
+injectPrintStyles();
 
 // ==============================================================================
-// BAHAGIAN 3: FUNGSI UTILITI DATABASE (INLINED - Menggantikan modules/admin.js)
+// BAHAGIAN B: PENGURUSAN NAVIGASI & SESI
 // ==============================================================================
 
-/**
- * Fungsi 3.1: Initialize Tournament (Jana Struktur Awal)
- */
-async function initializeTournament(tahun, existingData = []) {
-    console.log("Initializing tournament for year:", tahun);
-    try {
-        // 1. Setup Rumah Sukan
-        const rumahSukan = ['merah', 'biru', 'hijau', 'kuning'];
-        for (const r of rumahSukan) {
-            const rRef = doc(db, "kejohanan", tahun, "rumah", r);
-            const snap = await getDoc(rRef);
-            if (!snap.exists()) {
-                await setDoc(rRef, { 
-                    nama: r.toUpperCase(), 
-                    kod: '', 
-                    mata: 0,
-                    pingat: { emas:0, perak:0, gangsa:0 } 
-                });
-            }
-        }
-        return { success: true };
-    } catch (error) {
-        console.error("Init Error:", error);
-        return { success: false, message: error.message };
-    }
+// 1. Event Listener: Log Keluar
+const btnLogout = document.getElementById('btn-logout');
+if (btnLogout) {
+    btnLogout.addEventListener('click', handleLogout);
 }
 
 /**
- * Fungsi 3.2: Dapatkan Data Saringan
+ * Fungsi untuk mengendalikan proses log keluar.
+ * Membersihkan sesi dan mengembalikan pengguna ke halaman login.
  */
-async function getHeatsData(tahun, eventId) {
-    const heats = [];
-    try {
-        const q = query(collection(db, "kejohanan", tahun, "acara", eventId, "saringan"));
-        const snap = await getDocs(q);
-        snap.forEach(d => {
-            heats.push({ id: d.id, ...d.data() });
-        });
-        return heats;
-    } catch (e) {
-        console.error("Error getting heats:", e);
-        throw e;
-    }
-}
+function handleLogout() {
+    const confirmation = confirm(
+        "Adakah anda pasti mahu log keluar?\n\n" +
+        "Sebarang perubahan yang belum disimpan mungkin akan hilang."
+    );
 
-/**
- * Fungsi 3.3: Simpan Keputusan Saringan
- */
-async function saveHeatResults(tahun, eventId, heatId, pesertaData) {
-    try {
-        const heatRef = doc(db, "kejohanan", tahun, "acara", eventId, "saringan", heatId);
-        
-        // Cari Pemenang (1, 2, 3) untuk update mata rumah (Simplified logic)
-        // Nota: Pengiraan mata rumah yang kompleks biasanya dibuat di backend atau fungsi berasingan
-        // Di sini kita hanya simpan data peserta.
-        
-        await updateDoc(heatRef, {
-            peserta: pesertaData,
-            status: 'selesai',
-            updatedAt: new Date().toISOString()
-        });
-        
-        return true;
-    } catch (e) {
-        console.error("Error saving results:", e);
-        throw e;
-    }
-}
-
-/**
- * Fungsi 3.4: Jana Saringan (Auto Generate Heats)
- * Logic: Tarik peserta dari collection 'peserta', agih ke saringan 1, 2, 3...
- */
-async function generateHeats(tahun, eventId) {
-    // Dapatkan detail acara
-    const eventSnap = await getDoc(doc(db, "kejohanan", tahun, "acara", eventId));
-    if(!eventSnap.exists()) throw new Error("Acara tidak wujud");
-    const eventData = eventSnap.data();
-    
-    // Cari peserta yang daftar acara ini
-    // Nota: Ini memerlukan struktur data peserta yang betul.
-    // Kita anggap peserta ada field 'acara' array atau object.
-    
-    const allPesertaQ = query(collection(db, "kejohanan", tahun, "peserta"), where("kategori", "==", eventData.kategori));
-    const pSnap = await getDocs(allPesertaQ);
-    
-    let validPeserta = [];
-    pSnap.forEach(d => {
-        const p = d.data();
-        let isRegistered = false;
-        // Check pendaftaran
-        if(p.acara) {
-            if(Array.isArray(p.acara) && p.acara.includes(eventData.nama)) isRegistered = true;
-            else if(typeof p.acara === 'object' && p.acara[eventData.nama]) isRegistered = true;
-            // String check (separated by comma or semicolon)
-            else if(typeof p.acara === 'string' && p.acara.includes(eventData.nama)) isRegistered = true;
-        }
-        
-        if(isRegistered) {
-            validPeserta.push({
-                idPeserta: d.id,
-                nama: p.nama,
-                noBib: p.noBib || '-',
-                idRumah: p.rumah || p.idRumah || '',
-                sekolah: p.sekolah || '',
-                pencapaian: '',
-                kedudukan: 0,
-                lorong: 0
-            });
-        }
-    });
-
-    if(validPeserta.length === 0) throw new Error("Tiada peserta mendaftar untuk acara ini.");
-
-    // Logic Agihan Saringan (8 peserta per saringan)
-    const PER_HEAT = 8;
-    const totalHeats = Math.ceil(validPeserta.length / PER_HEAT);
-    
-    const batch = writeBatch(db);
-    
-    // Shuffle peserta (optional)
-    validPeserta.sort(() => Math.random() - 0.5);
-
-    for(let i=0; i<totalHeats; i++) {
-        const heatPeserta = validPeserta.slice(i*PER_HEAT, (i+1)*PER_HEAT);
-        
-        // Assign Lorong
-        heatPeserta.forEach((p, idx) => { p.lorong = idx + 1; });
-
-        const heatRef = doc(collection(db, "kejohanan", tahun, "acara", eventId, "saringan"));
-        batch.set(heatRef, {
-            noSaringan: i + 1,
-            jenis: (totalHeats === 1) ? 'akhir' : 'saringan', // Jika cuma 1, terus akhir
-            status: 'belum',
-            peserta: heatPeserta
-        });
-    }
-
-    await batch.commit();
-    return true;
-}
-
-/**
- * Fungsi 3.5: Simpan Bulk Records (CSV Import)
- */
-async function saveBulkRecords(records) {
-    const batchSize = 400;
-    let batch = writeBatch(db);
-    let count = 0;
-    
-    // Kita simpan dalam collection 'rekod_kejohanan' atau update dalam acara
-    // Di sini kita simpan sebagai subcollection global 'rekod'
-    
-    for(const rec of records) {
-        const ref = doc(collection(db, "kejohanan", tahunAktif, "rekod_arkib"));
-        batch.set(ref, rec);
-        count++;
-        
-        if(count >= batchSize) {
-            await batch.commit();
-            batch = writeBatch(db);
-            count = 0;
-        }
-    }
-    if(count > 0) await batch.commit();
-}
-
-// ==============================================================================
-// BAHAGIAN 4: SYSTEM INITIALIZATION & NAVIGATION (UI LOGIC)
-// ==============================================================================
-
-/**
- * Fungsi Utama: DOMContentLoaded
- * Ini adalah 'Entry Point' sistem.
- */
-document.addEventListener('DOMContentLoaded', async () => {
-    console.log("============================================");
-    console.log(" SISTEM ADMIN MEMULAKAN PROSES INITIALIZATION ");
-    console.log(" Tahun Kejohanan: " + tahunAktif);
-    console.log("============================================");
-
-    try {
-        // 1. Kemaskini UI Sidebar
-        const labelTahun = document.getElementById('tahun-label');
-        if(labelTahun) labelTahun.innerText = `Tahun Operasi: ${tahunAktif}`;
-
-        // 2. Setup Default View
-        toggleView('main');
-
-        // 3. --- PENTING: BUANG LOADING SCREEN ---
-        // Kita cuba cari elemen loading dengan pelbagai ID biasa
-        const possibleLoaderIds = ['loading-overlay', 'loader', 'preloader', 'loading-screen'];
-        let loaderRemoved = false;
-        
-        possibleLoaderIds.forEach(id => {
-            const el = document.getElementById(id);
-            if(el) {
-                el.style.opacity = '0';
-                setTimeout(() => {
-                    el.style.display = 'none';
-                    if(el.parentNode) el.parentNode.removeChild(el); // Buang terus dari DOM
-                }, 500);
-                loaderRemoved = true;
-            }
-        });
-
-        // Jika user guna Bootstrap Modal sebagai loader
-        const modalLoader = document.querySelector('.modal-backdrop');
-        if(modalLoader) modalLoader.remove();
-        document.body.classList.remove('modal-open');
-        document.body.style.overflow = 'auto';
-
-        console.log("Sistem sedia digunakan.");
-
-    } catch (err) {
-        console.error("Ralat Init:", err);
-        alert("Ralat semasa memuatkan sistem: " + err.message);
-    }
-});
-
-// --- PENGURUSAN KLIK MENU SIDEBAR ---
-
-// 1. Menu Setup & Database
-document.getElementById('menu-setup')?.addEventListener('click', () => {
-    console.log("Navigasi: Menu Setup diklik.");
-    toggleView('main'); 
-    renderSetupForm();  
-});
-
-// 2. Menu Keputusan Acara
-document.getElementById('menu-acara')?.addEventListener('click', () => {
-    console.log("Navigasi: Menu Acara diklik.");
-    toggleView('main'); 
-    renderSenaraiAcara('input'); 
-});
-
-// 3. Menu Olahragawan 
-document.getElementById('menu-olahragawan')?.addEventListener('click', () => {
-    console.log("Navigasi: Menu Olahragawan diklik.");
-    toggleView('olahragawan'); 
-});
-
-// 4. Butang Log Keluar
-document.getElementById('btn-logout')?.addEventListener('click', () => {
-    if(confirm("Adakah anda pasti mahu log keluar dari sistem Admin?")) {
+    if (confirmation) {
+        logSystemAction("LOGOUT", "Pengguna log keluar dari sistem.");
         sessionStorage.clear();
         window.location.href = 'login.html';
     }
-});
+}
+
+// 2. Event Listener: Menu Navigasi Sidebar
+
+// Menu: Setup & Utiliti
+const menuSetup = document.getElementById('menu-setup');
+if (menuSetup) {
+    menuSetup.addEventListener('click', () => {
+        setActiveMenu('menu-setup');
+        renderSetupDashboard();
+    });
+}
+
+// Menu: Urus Acara & Keputusan (Digabungkan)
+const menuAcara = document.getElementById('menu-acara');
+if (menuAcara) {
+    menuAcara.innerHTML = '<i class="bi bi-trophy me-2"></i>Urus Acara & Keputusan';
+    menuAcara.addEventListener('click', () => {
+        setActiveMenu('menu-acara');
+        renderSenaraiAcara();
+    });
+}
+
+// Menu Lama: Keputusan (Dibuang/Disembunyikan)
+const menuKeputusan = document.getElementById('menu-keputusan');
+if (menuKeputusan) {
+    menuKeputusan.style.display = 'none'; // Sembunyikan dari pandangan
+}
 
 /**
- * Helper: Toggle Views
+ * Fungsi utiliti untuk menukar kelas 'active' pada sidebar.
+ * @param {string} activeId - ID elemen menu yang dipilih.
  */
-function toggleView(viewName) {
-    const mainContent = document.getElementById('content-area');
-    const olahragawanView = document.getElementById('view-olahragawan');
-    
-    if (viewName === 'olahragawan') {
-        if(mainContent) mainContent.classList.add('d-none');
-        if(olahragawanView) olahragawanView.classList.remove('d-none');
-    } else {
-        if(mainContent) mainContent.classList.remove('d-none');
-        if(olahragawanView) olahragawanView.classList.add('d-none');
-    }
+function setActiveMenu(activeId) {
+    const menus = ['menu-setup', 'menu-acara'];
+    menus.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            if (id === activeId) {
+                el.classList.add('active');
+                el.classList.add('bg-primary');
+                el.classList.add('text-white');
+            } else {
+                el.classList.remove('active');
+                el.classList.remove('bg-primary');
+                el.classList.remove('text-white');
+            }
+        }
+    });
 }
 
 // ==============================================================================
-// BAHAGIAN 5: SETUP FORM & DATA UTILITY
+// BAHAGIAN C: DASHBOARD UTAMA & SETUP (STATISTIK)
 // ==============================================================================
 
-function renderSetupForm() {
-    let html = `
-        <div class="row g-4 animate__animated animate__fadeIn">
-            <div class="col-md-6">
-                <div class="card p-4 h-100 shadow-sm border-0">
-                    <h5 class="text-primary fw-bold"><i class="bi bi-database me-2"></i>Setup Database</h5>
-                    <p class="text-muted small">
-                        Inisialisasi struktur DB tahun ${tahunAktif}.
-                    </p>
-                    <button class="btn btn-primary mt-auto w-100" id="btn-init">
-                        <i class="bi bi-play-circle me-2"></i>Jana Struktur
-                    </button>
+/**
+ * Memaparkan papan pemuka (dashboard) utama.
+ * Mengandungi statistik ringkas dan menu utiliti sistem.
+ */
+async function renderSetupDashboard() {
+    // Paparan Loading Sementara
+    contentArea.innerHTML = renderLoadingSpinner("Memuatkan Papan Pemuka...");
+
+    // Dapatkan statistik ringkas (count)
+    let stats = {
+        totalAcara: 0,
+        totalPeserta: 0,
+        totalRumah: 4
+    };
+
+    try {
+        // Kira Acara
+        const acaraSnap = await getDocs(collection(db, "kejohanan", tahunAktif, "acara"));
+        stats.totalAcara = acaraSnap.size;
+
+        // Kira Peserta (Batch limit untuk performance jika perlu, di sini kita ambil saiz sahaja)
+        const pesertaSnap = await getDocs(collection(db, "kejohanan", tahunAktif, "peserta"));
+        stats.totalPeserta = pesertaSnap.size;
+
+    } catch (e) {
+        console.error("Gagal memuatkan statistik:", e);
+    }
+
+    const html = `
+        <div class="container-fluid animate__animated animate__fadeIn">
+            <div class="row mb-4">
+                <div class="col-12">
+                    <h3 class="fw-bold text-dark border-start border-5 border-primary ps-3">
+                        Papan Pemuka & Tetapan (${tahunAktif})
+                    </h3>
+                    <p class="text-muted ms-3 mb-0">Pusat kawalan utama sistem pengurusan kejohanan.</p>
                 </div>
             </div>
 
-            <div class="col-md-6">
-                <div class="card p-4 h-100 shadow-sm border-0">
-                    <h5 class="text-success fw-bold"><i class="bi bi-shield-lock me-2"></i>Rumah Sukan</h5>
-                    <p class="text-muted small">Urus kata laluan Rumah Sukan.</p>
-                    <button class="btn btn-success mt-auto w-100" onclick="renderSenaraiRumah()">
-                        <i class="bi bi-key me-2"></i>Urus Akses
-                    </button>
-                </div>
-            </div>
-
-            <div class="col-md-12">
-                <div class="card p-4 shadow-sm border-0">
-                    <h5 class="text-dark mb-3 fw-bold"><i class="bi bi-tools me-2"></i>Utiliti Data</h5>
-                    <div class="d-flex gap-2 flex-wrap">
-                        <button class="btn btn-outline-dark" id="btn-laksana-backup">
-                            <i class="bi bi-download me-2"></i>Backup JSON
-                        </button>
-                        <button class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#modalPadam">
-                            <i class="bi bi-trash me-2"></i>Padam Data
-                        </button>
-                    </div>
-
-                    <hr>
-                    <div class="mt-3">
-                        <label class="form-label small fw-bold">Restore JSON:</label>
-                        <div class="input-group">
-                            <input type="file" class="form-control" id="file-restore" accept=".json">
-                            <button class="btn btn-secondary" id="btn-laksana-restore">Restore</button>
-                        </div>
-                    </div>
-                    
-                    <hr>
-                    <div class="mt-3">
-                        <label class="form-label small fw-bold">Import CSV Rekod:</label>
-                        <div class="input-group">
-                            <input type="file" class="form-control" id="file-csv" accept=".csv">
-                            <button class="btn btn-info text-white" id="btn-proses-csv">Upload CSV</button>
+            <div class="row mb-4">
+                <div class="col-md-4">
+                    <div class="card shadow-sm border-0 bg-primary text-white h-100">
+                        <div class="card-body d-flex align-items-center">
+                            <div class="display-4 me-3"><i class="bi bi-people-fill"></i></div>
+                            <div>
+                                <h5 class="card-title mb-0">Jumlah Atlet</h5>
+                                <h2 class="fw-bold mb-0">${stats.totalPeserta}</h2>
+                                <small>Peserta Berdaftar</small>
+                            </div>
                         </div>
                     </div>
                 </div>
+                <div class="col-md-4">
+                    <div class="card shadow-sm border-0 bg-success text-white h-100">
+                        <div class="card-body d-flex align-items-center">
+                            <div class="display-4 me-3"><i class="bi bi-trophy-fill"></i></div>
+                            <div>
+                                <h5 class="card-title mb-0">Jumlah Acara</h5>
+                                <h2 class="fw-bold mb-0">${stats.totalAcara}</h2>
+                                <small>Dipertandingkan</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card shadow-sm border-0 bg-info text-white h-100">
+                        <div class="card-body d-flex align-items-center">
+                            <div class="display-4 me-3"><i class="bi bi-house-door-fill"></i></div>
+                            <div>
+                                <h5 class="card-title mb-0">Rumah Sukan</h5>
+                                <h2 class="fw-bold mb-0">${stats.totalRumah}</h2>
+                                <small>Pasukan Bertanding</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
+
+            <div class="row">
+                <div class="col-lg-6 mb-4">
+                    <div class="card shadow-sm h-100">
+                        <div class="card-header bg-white fw-bold">
+                            <i class="bi bi-database-gear me-2 text-primary"></i>Operasi Pangkalan Data
+                        </div>
+                        <div class="card-body">
+                            <p class="text-muted small">Fungsi untuk memulakan tahun baru atau mengemaskini struktur data asas.</p>
+                            
+                            <button class="btn btn-outline-primary w-100 mb-2 text-start" id="btn-init">
+                                <i class="bi bi-magic me-2"></i>Jana Struktur Awal (Tahun Baru)
+                            </button>
+                            
+                            <button class="btn btn-outline-success w-100 mb-2 text-start" id="btn-manage-house">
+                                <i class="bi bi-key me-2"></i>Urus Kata Laluan Rumah Sukan
+                            </button>
+
+                            <hr>
+
+                            <p class="text-muted small">Zon Bahaya & Penyelenggaraan:</p>
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-sm btn-warning flex-fill" data-bs-toggle="modal" data-bs-target="#modalBackup">
+                                    <i class="bi bi-download me-1"></i>Backup
+                                </button>
+                                <button class="btn btn-sm btn-secondary flex-fill" data-bs-toggle="modal" data-bs-target="#modalRestore">
+                                    <i class="bi bi-upload me-1"></i>Restore
+                                </button>
+                                <button class="btn btn-sm btn-danger flex-fill" data-bs-toggle="modal" data-bs-target="#modalPadam">
+                                    <i class="bi bi-trash me-1"></i>Reset
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-lg-6 mb-4">
+                    <div class="card shadow-sm h-100">
+                        <div class="card-header bg-white fw-bold">
+                            <i class="bi bi-file-earmark-spreadsheet me-2 text-success"></i>Import Data Pukal
+                        </div>
+                        <div class="card-body">
+                            <p class="text-muted small">Muat naik fail CSV untuk mengemaskini rekod kejohanan terdahulu.</p>
+                            <div class="alert alert-light border small">
+                                <strong>Format CSV:</strong><br>
+                                <code>REKOD, ACARA, KATEGORI, TAHUN, NAMA</code>
+                            </div>
+                            <button class="btn btn-success w-100" data-bs-toggle="modal" data-bs-target="#modalCSV">
+                                <i class="bi bi-cloud-upload me-2"></i>Muat Naik CSV Rekod
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="house-list-container" class="mt-2"></div>
+
         </div>
-        <div id="house-list" class="mt-4"></div>
     `;
 
     contentArea.innerHTML = html;
 
-    // Logic Init
+    // --- BIND EVENT LISTENERS UNTUK DASHBOARD ---
+
+    // 1. Tombol Inisialisasi
     document.getElementById('btn-init').onclick = async () => {
-        if(!confirm("Jana database baru?")) return;
-        const btn = document.getElementById('btn-init');
-        btn.disabled = true; btn.innerText = "Memproses...";
-        await initializeTournament(tahunAktif);
-        btn.disabled = false; btn.innerText = "Selesai!";
-        setTimeout(() => btn.innerHTML = '<i class="bi bi-play-circle me-2"></i>Jana Struktur', 2000);
+        if(!confirm(`AMARAN PENTING:\n\nAdakah anda pasti mahu menjana struktur data untuk tahun ${tahunAktif}?\n\nJika data sudah wujud, ia TIDAK akan dipadam, tetapi acara default mungkin ditambah.`)) return;
+        
+        const defaultEvents = [
+            { nama: "100m", kategori: "L1", jenis: "Balapan" },
+            { nama: "200m", kategori: "L1", jenis: "Balapan" },
+            { nama: "4x100m", kategori: "L1", jenis: "Balapan" },
+            { nama: "Lompat Jauh", kategori: "L1", jenis: "Padang" },
+            { nama: "Lontar Peluru", kategori: "L1", jenis: "Padang" }
+        ];
+
+        contentArea.innerHTML = renderLoadingSpinner("Menjana Struktur...");
+        const res = await initializeTournament(tahunAktif, defaultEvents);
+        
+        if(res.success) {
+            alert("Proses Selesai: Struktur database telah dijana.");
+            renderSetupDashboard(); // Refresh
+        } else {
+            alert("Ralat: " + res.message);
+            renderSetupDashboard();
+        }
     };
 
-    // Logic Backup
-    document.getElementById('btn-laksana-backup').onclick = async () => {
-        const btn = document.getElementById('btn-laksana-backup');
-        btn.innerHTML = "Backing up...";
-        try {
-            let dataBackup = {};
-            const collectionsToBackup = ["peserta", "rumah", "acara"];
-            for(let col of collectionsToBackup) {
-                dataBackup[col] = {};
-                const snap = await getDocs(collection(db, "kejohanan", tahunAktif, col));
-                snap.forEach(d => { dataBackup[col][d.id] = d.data(); });
-            }
-            const jsonString = JSON.stringify(dataBackup, null, 2);
-            const blob = new Blob([jsonString], {type: "application/json"});
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a'); a.href = url; 
-            a.download = `BACKUP_${tahunAktif}.json`; document.body.appendChild(a); a.click(); document.body.removeChild(a);
-        } catch(e) { alert("Error: "+e.message); }
-        btn.innerHTML = '<i class="bi bi-download me-2"></i>Backup JSON';
+    // 2. Tombol Urus Rumah
+    document.getElementById('btn-manage-house').onclick = () => {
+        renderSenaraiRumah();
     };
 }
 
-// Function Urus Rumah
-window.renderSenaraiRumah = async () => {
-    const container = document.getElementById('house-list');
-    container.innerHTML = 'Loading...';
+// ==============================================================================
+// BAHAGIAN D: PENGURUSAN RUMAH SUKAN
+// ==============================================================================
+
+/**
+ * Memaparkan senarai rumah sukan dan borang pengurusan kata laluan.
+ */
+async function renderSenaraiRumah() {
+    const container = document.getElementById('house-list-container');
+    if (!container) return;
+
+    container.innerHTML = `
+        <div class="text-center py-4">
+            <div class="spinner-border text-success spinner-border-sm"></div>
+            <span class="ms-2 text-muted">Mengambil data rumah sukan...</span>
+        </div>
+    `;
+
+    // ID Rumah Standard (Boleh diubah mengikut keperluan sekolah)
+    const rumahIds = ['merah', 'biru', 'hijau', 'kuning'];
     
-    try {
-        const rumahColors = ['merah', 'biru', 'hijau', 'kuning'];
-        let html = `
-        <div class="card border-0 shadow-sm">
+    let tableHtml = `
+        <div class="card border-0 shadow-sm animate__animated animate__fadeInUp">
+            <div class="card-header bg-dark text-white py-2">
+                <i class="bi bi-shield-lock me-2"></i>Konfigurasi Akses Rumah Sukan
+            </div>
             <div class="table-responsive">
-                <table class="table table-bordered mb-0 align-middle">
-                    <thead class="table-light"><tr><th>Rumah</th><th>Password</th><th>Action</th></tr></thead>
-                    <tbody>`;
+                <table class="table table-hover mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="ps-4">Rumah</th>
+                            <th>Kod Akses (Password)</th>
+                            <th>Status Data</th>
+                            <th class="text-center">Tindakan</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+    `;
+
+    for (const id of rumahIds) {
+        // Fetch data untuk setiap rumah
+        const docRef = doc(db, "kejohanan", tahunAktif, "rumah", id);
+        const docSnap = await getDoc(docRef);
+        let kodSemasa = '';
+        let dataWujud = false;
         
-        for(let r of rumahColors) {
-            const snap = await getDoc(doc(db, "kejohanan", tahunAktif, "rumah", r));
-            const kod = snap.exists() ? (snap.data().kod || '') : '';
-            html += `<tr>
-                <td class="text-uppercase fw-bold text-${r==='kuning'?'warning':r}">${r}</td>
-                <td><input id="kod-${r}" type="text" class="form-control" value="${kod}"></td>
-                <td><button class="btn btn-dark btn-sm" onclick="simpanKodRumah('${r}')">Simpan</button></td>
-            </tr>`;
+        if (docSnap.exists()) {
+            kodSemasa = docSnap.data().kod || '';
+            dataWujud = true;
         }
-        html += `</tbody></table></div></div>`;
-        container.innerHTML = html;
-    } catch(e) { container.innerHTML = "Error loading houses."; }
+
+        // Setup UI colors
+        let badgeColor = 'secondary';
+        if(id==='merah') badgeColor='danger';
+        if(id==='biru') badgeColor='primary';
+        if(id==='hijau') badgeColor='success';
+        if(id==='kuning') badgeColor='warning text-dark';
+
+        tableHtml += `
+            <tr>
+                <td class="ps-4">
+                    <span class="badge bg-${badgeColor} p-2 px-3 rounded-pill text-uppercase shadow-sm" style="min-width: 80px;">
+                        ${id}
+                    </span>
+                </td>
+                <td>
+                    <div class="input-group input-group-sm" style="max-width: 200px;">
+                        <span class="input-group-text bg-white"><i class="bi bi-key text-muted"></i></span>
+                        <input type="text" class="form-control font-monospace fw-bold" 
+                               id="input-kod-${id}" 
+                               value="${kodSemasa}" 
+                               placeholder="Set Password...">
+                    </div>
+                </td>
+                <td>
+                    ${dataWujud ? 
+                        '<span class="badge bg-light text-success border border-success"><i class="bi bi-check-circle me-1"></i>Aktif</span>' : 
+                        '<span class="badge bg-light text-muted border"><i class="bi bi-dash-circle me-1"></i>Belum Setup</span>'
+                    }
+                </td>
+                <td class="text-center">
+                    <button class="btn btn-sm btn-primary px-3 rounded-pill shadow-sm" onclick="simpanKodRumah('${id}')">
+                        <i class="bi bi-save me-1"></i> Simpan
+                    </button>
+                </td>
+            </tr>
+        `;
+    }
+
+    tableHtml += `
+                    </tbody>
+                </table>
+            </div>
+            <div class="card-footer bg-light text-muted small">
+                Nota: Kod akses ini perlu diberikan kepada Ketua Rumah Sukan masing-masing untuk pendaftaran atlet.
+            </div>
+        </div>
+    `;
+
+    container.innerHTML = tableHtml;
+}
+
+/**
+ * Fungsi global untuk menyimpan kod rumah sukan ke Firestore.
+ * Dilampirkan pada window object supaya boleh dipanggil dari HTML string event handler.
+ * @param {string} idRumah - ID rumah sukan (cth: 'merah').
+ */
+window.simpanKodRumah = async (idRumah) => {
+    const inputEl = document.getElementById(`input-kod-${idRumah}`);
+    const kodBaru = inputEl.value.trim();
+    
+    // Validasi Input
+    if (!kodBaru) {
+        inputEl.classList.add('is-invalid');
+        alert("Sila masukkan kod akses yang sah (Tidak boleh kosong).");
+        return;
+    } else {
+        inputEl.classList.remove('is-invalid');
+    }
+
+    // UI Loading pada butang yang ditekan
+    const btn = event.currentTarget; 
+    const originalContent = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+    btn.disabled = true;
+
+    try {
+        const docRef = doc(db, "kejohanan", tahunAktif, "rumah", idRumah);
+        
+        // Simpan (Merge true penting untuk elak data lain hilang)
+        await setDoc(docRef, { 
+            kod: kodBaru,
+            nama: idRumah.toUpperCase(),
+            updatedAt: new Date().toISOString()
+        }, { merge: true });
+
+        // Feedback Visual Berjaya
+        btn.classList.remove('btn-primary');
+        btn.classList.add('btn-success');
+        btn.innerHTML = '<i class="bi bi-check-lg"></i> OK';
+        
+        logSystemAction("UPDATE_HOUSE", `Kod akses rumah ${idRumah} dikemaskini.`);
+
+        setTimeout(() => {
+            btn.classList.remove('btn-success');
+            btn.classList.add('btn-primary');
+            btn.innerHTML = originalContent;
+            btn.disabled = false;
+        }, 1500);
+
+    } catch (error) {
+        console.error("Ralat menyimpan kod rumah:", error);
+        alert("Ralat pelayan: " + error.message);
+        btn.innerHTML = originalContent;
+        btn.disabled = false;
+    }
 };
 
-window.simpanKodRumah = async (id) => {
-    const val = document.getElementById(`kod-${id}`).value;
-    await updateDoc(doc(db, "kejohanan", tahunAktif, "rumah", id), { kod: val });
-    alert("Disimpan.");
+// ==============================================================================
+// BAHAGIAN E: SENARAI ACARA & PENGURUSAN UTAMA
+// ==============================================================================
+
+/**
+ * Memaparkan senarai semua acara yang terdapat dalam sistem.
+ * Senarai ini menggabungkan fungsi pengurusan saringan dan input keputusan.
+ */
+async function renderSenaraiAcara() {
+    contentArea.innerHTML = renderLoadingSpinner("Menyediakan senarai acara...");
+    
+    // Dapatkan data acara
+    let acara = [];
+    try {
+        acara = await getEventsReadyForResults(tahunAktif);
+    } catch (err) {
+        console.error(err);
+        contentArea.innerHTML = renderErrorAlert("Gagal memuatkan senarai acara. Sila semak sambungan internet.");
+        return;
+    }
+
+    // Susun acara: Nama (A-Z) -> Kategori (L/P)
+    acara.sort((a, b) => {
+        const namaA = a.nama.toUpperCase();
+        const namaB = b.nama.toUpperCase();
+        if (namaA !== namaB) return namaA < namaB ? -1 : 1;
+        
+        const katA = a.kategori.toUpperCase();
+        const katB = b.kategori.toUpperCase();
+        return katA < katB ? -1 : 1;
+    });
+
+    let html = `
+        <div class="container-fluid animate__animated animate__fadeIn">
+            <div class="row align-items-center mb-4 pb-3 border-bottom">
+                <div class="col-md-7">
+                    <h4 class="fw-bold text-dark mb-1">
+                        <i class="bi bi-list-check me-2 text-primary"></i>Senarai Acara
+                    </h4>
+                    <p class="text-muted small mb-0">
+                        Pilih acara untuk mengurus saringan, mencetak borang, atau memasukkan keputusan rasmi.
+                    </p>
+                </div>
+                <div class="col-md-5 mt-3 mt-md-0 d-print-none">
+                    <div class="input-group shadow-sm">
+                        <span class="input-group-text bg-white border-end-0 text-muted">
+                            <i class="bi bi-search"></i>
+                        </span>
+                        <input type="text" id="search-acara" class="form-control border-start-0" 
+                               placeholder="Cari acara (Cth: 100m, L1, Padang)...">
+                    </div>
+                </div>
+            </div>
+
+            <div class="row g-3" id="container-acara">
+    `;
+    
+    if(acara.length === 0) {
+        html += `
+            <div class="col-12 text-center py-5">
+                <div class="mb-3">
+                    <i class="bi bi-clipboard-x text-muted" style="font-size: 4rem; opacity: 0.5;"></i>
+                </div>
+                <h5 class="text-muted fw-bold">Tiada Acara Dijumpai</h5>
+                <p class="text-muted small">
+                    Pangkalan data acara kosong untuk tahun ${tahunAktif}.<br>
+                    Sila pergi ke menu <strong>Setup</strong> untuk menjana data awal.
+                </p>
+            </div>
+        `;
+    } else {
+        acara.forEach(a => {
+            // Tentukan ikon berdasarkan jenis
+            let iconJenis = 'bi-stopwatch'; // Default Balapan
+            let warnaBadge = 'bg-info bg-opacity-10 text-info border-info';
+            
+            if (a.jenis === 'Padang') {
+                iconJenis = 'bi-bullseye';
+                warnaBadge = 'bg-success bg-opacity-10 text-success border-success';
+            }
+
+            html += `
+                <div class="col-xl-3 col-lg-4 col-md-6 acara-card-container">
+                    <div class="card shadow-sm border-0 h-100 hover-elevate transition-all">
+                        <div class="card-body d-flex flex-column">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <span class="badge ${warnaBadge} border px-2 py-1 rounded-pill">
+                                    <i class="bi ${iconJenis} me-1"></i>${a.jenis || 'Umum'}
+                                </span>
+                                <span class="badge bg-secondary bg-opacity-10 text-dark border px-2 py-1 rounded-pill">
+                                    ${a.kategori}
+                                </span>
+                            </div>
+                            
+                            <h5 class="card-title fw-bold text-dark text-truncate mb-1" title="${a.nama}">
+                                ${a.nama}
+                            </h5>
+                            
+                            <p class="card-text text-muted small flex-grow-1">
+                                Klik untuk urus saringan dan keputusan.
+                            </p>
+
+                            <button class="btn btn-outline-primary w-100 fw-bold rounded-3 mt-3 stretched-link" 
+                                    onclick="bukaSaringan('${a.id}', '${a.nama} ${a.kategori}')">
+                                <i class="bi bi-pencil-square me-2"></i>Urus & Keputusan
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+    }
+    
+    html += `</div></div>`; // Tutup row & container
+    
+    contentArea.innerHTML = html;
+
+    // Logik Carian (Client-Side Filtering)
+    const searchInput = document.getElementById('search-acara');
+    if (searchInput) {
+        searchInput.addEventListener('input', (e) => {
+            const keyword = e.target.value.toLowerCase();
+            const cards = document.querySelectorAll('.acara-card-container');
+            
+            let foundCount = 0;
+            cards.forEach(card => {
+                const text = card.innerText.toLowerCase();
+                if (text.includes(keyword)) {
+                    card.style.display = "block";
+                    card.classList.add("animate__animated", "animate__fadeIn");
+                    foundCount++;
+                } else {
+                    card.style.display = "none";
+                }
+            });
+        });
+    }
+}
+
+// ==============================================================================
+// BAHAGIAN F: PENGURUSAN SARINGAN (HEATS)
+// ==============================================================================
+
+/**
+ * Memaparkan senarai saringan yang tersedia bagi acara yang dipilih.
+ * Jika tiada saringan, memaparkan butang untuk menjana saringan.
+ * * @param {string} eventId - ID dokumen acara.
+ * @param {string} label - Nama paparan acara (Cth: "100m L1").
+ */
+window.bukaSaringan = async (eventId, label) => {
+    contentArea.innerHTML = renderLoadingSpinner("Menyemak status saringan...");
+    
+    let heats = [];
+    try {
+        heats = await getHeatsData(tahunAktif, eventId);
+    } catch (e) {
+        console.error("Ralat data saringan:", e);
+        contentArea.innerHTML = renderErrorAlert("Ralat pelayan semasa memuatkan saringan.");
+        return;
+    }
+    
+    // Header UI
+    let htmlHeader = `
+        <div class="container-fluid animate__animated animate__fadeIn">
+            <div class="d-flex align-items-center mb-4 pb-2 border-bottom d-print-none">
+                <button class="btn btn-light border shadow-sm me-3 rounded-circle p-2" 
+                        onclick="renderSenaraiAcara()" title="Kembali ke Senarai">
+                    <i class="bi bi-arrow-left"></i>
+                </button>
+                <div>
+                    <h4 class="mb-0 fw-bold text-primary">${label}</h4>
+                    <span class="text-muted small">Pengurusan Saringan & Keputusan</span>
+                </div>
+            </div>
+    `;
+
+    let htmlContent = '';
+
+    // KES 1: Tiada Saringan Wujud
+    if (heats.length === 0) {
+        htmlContent = `
+            <div class="row justify-content-center mt-5">
+                <div class="col-md-8 text-center">
+                    <div class="card border-0 shadow-lg p-5 rounded-4 bg-light">
+                        <div class="mb-3">
+                            <span class="d-inline-block bg-white p-4 rounded-circle shadow-sm">
+                                <i class="bi bi-shuffle text-primary" style="font-size: 3rem;"></i>
+                            </span>
+                        </div>
+                        <h3 class="fw-bold text-dark">Saringan Belum Dijana</h3>
+                        <p class="text-muted mb-4 px-md-5">
+                            Sistem mendapati belum ada saringan atau undian lorong untuk acara ini. 
+                            Anda boleh menjana saringan secara automatik berdasarkan pendaftaran peserta.
+                        </p>
+                        
+                        <button id="btn-jana-saringan" class="btn btn-primary btn-lg px-5 rounded-pill shadow hover-scale">
+                            <i class="bi bi-magic me-2"></i>Jana Saringan Automatik
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    } 
+    // KES 2: Saringan Sudah Ada
+    else {
+        // Susun saringan (Saringan 1, 2, ... Akhir)
+        heats.sort((a,b) => parseInt(a.noSaringan) - parseInt(b.noSaringan));
+
+        htmlContent += `
+            <div class="row justify-content-center">
+                <div class="col-lg-10">
+                    <div class="alert alert-info border-0 shadow-sm d-flex align-items-center mb-4">
+                        <i class="bi bi-info-circle-fill fs-4 me-3"></i>
+                        <div>
+                            <strong>Pilih Sesi:</strong>
+                            Klik pada saringan di bawah untuk melihat senarai nama, mencetak borang, atau memasukkan keputusan.
+                        </div>
+                    </div>
+                    
+                    <div class="list-group shadow-sm border-0 rounded-3 overflow-hidden">
+        `;
+
+        heats.forEach(h => {
+            const isDone = (h.status === 'selesai');
+            const statusBadge = isDone 
+                ? `<span class="badge bg-success rounded-pill"><i class="bi bi-check-lg me-1"></i>Selesai</span>`
+                : `<span class="badge bg-warning text-dark rounded-pill"><i class="bi bi-hourglass-split me-1"></i>Belum Selesai</span>`;
+            
+            let displayTitle = h.jenis === 'akhir' ? "ACARA AKHIR" : `SARINGAN ${h.noSaringan}`;
+            let icon = h.jenis === 'akhir' ? 'bi-trophy-fill text-warning' : 'bi-flag-fill text-secondary';
+
+            htmlContent += `
+                <button class="list-group-item list-group-item-action p-4 d-flex justify-content-between align-items-center border-bottom"
+                        onclick="paparkanPerincianSaringan('${eventId}', '${h.id}', '${label}', '${h.jenis}')">
+                    <div class="d-flex align-items-center">
+                        <div class="bg-light p-3 rounded-3 me-4 text-center" style="min-width: 60px;">
+                            <i class="bi ${icon} fs-4"></i>
+                        </div>
+                        <div>
+                            <h5 class="fw-bold mb-1 text-dark">${displayTitle}</h5>
+                            <p class="mb-0 text-muted small">Klik untuk urus</p>
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-center gap-3">
+                        ${statusBadge}
+                        <i class="bi bi-chevron-right text-muted"></i>
+                    </div>
+                </button>
+            `;
+        });
+        htmlContent += `</div></div></div>`;
+    }
+
+    contentArea.innerHTML = htmlHeader + htmlContent + `</div>`;
+
+    // Bind Event: Jana Saringan
+    const btnJana = document.getElementById('btn-jana-saringan');
+    if (btnJana) {
+        btnJana.onclick = async () => {
+             if(confirm("Pengesahan: Adakah anda mahu menjana saringan untuk acara ini?")) {
+                 btnJana.disabled = true;
+                 btnJana.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Memproses...';
+                 
+                 try {
+                     const res = await generateHeats(tahunAktif, eventId);
+                     if(res.success) {
+                         alert(`Berjaya! ${res.message}`);
+                         bukaSaringan(eventId, label); // Refresh page
+                     } else {
+                         alert("Ralat: " + res.message);
+                         btnJana.disabled = false;
+                         btnJana.innerText = "Cuba Lagi";
+                     }
+                 } catch (err) {
+                     console.error(err);
+                     alert("Ralat sistem tidak dijangka.");
+                 }
+             }
+        };
+    }
 };
 
-// Event Listeners for CSV/Restore/Delete
+// ==============================================================================
+// BAHAGIAN G: PAPARAN TERPERINCI & INPUT KEPUTUSAN
+// ==============================================================================
+
+/**
+ * Fungsi Utama untuk memaparkan borang saringan.
+ * Mengendalikan logik paparan input, mod cetak, dan simpan.
+ * * @param {string} eventId - ID Acara
+ * @param {string} heatId - ID Saringan
+ * @param {string} labelAcara - Nama Acara
+ * @param {string} jenisSaringan - 'saringan' atau 'akhir'
+ */
+window.paparkanPerincianSaringan = async (eventId, heatId, labelAcara, jenisSaringan) => {
+    contentArea.innerHTML = renderLoadingSpinner("Memuatkan data borang...");
+
+    try {
+        // Fetch Data Saringan
+        const heatRef = doc(db, "kejohanan", tahunAktif, "acara", eventId, "saringan", heatId);
+        const heatSnap = await getDoc(heatRef);
+
+        if (!heatSnap.exists()) {
+            contentArea.innerHTML = renderErrorAlert("Data saringan tidak dijumpai.");
+            return;
+        }
+
+        const data = heatSnap.data();
+        
+        // Simpan dalam Global Cache untuk operasi Simpan nanti
+        window.currentHeatDataCache = data;
+        window.activeContext = { eventId, heatId, labelAcara, jenisSaringan };
+
+        // Tentukan Jenis Borang
+        const isHighJump = ACARA_KHAS.some(x => labelAcara.includes(x)); // Lompat Tinggi
+        const isField = ACARA_PADANG.some(x => labelAcara.includes(x)); // Lompat Jauh, Lontar Peluru
+        
+        // Tajuk Paparan
+        let subTitle = (data.jenis === 'akhir') ? "ACARA AKHIR" : `SARINGAN ${data.noSaringan}`;
+        let badgeType = (data.jenis === 'akhir') ? "bg-warning text-dark" : "bg-secondary";
+
+        // HTML Header (Controls)
+        let htmlHeader = `
+            <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom d-print-none sticky-top bg-white py-3" style="z-index: 1020;">
+                <div class="d-flex align-items-center">
+                    <button class="btn btn-outline-secondary me-3 shadow-sm" onclick="bukaSaringan('${eventId}', '${labelAcara}')">
+                        <i class="bi bi-arrow-left me-1"></i> Kembali
+                    </button>
+                    <div>
+                        <h5 class="fw-bold mb-0 text-dark">${labelAcara}</h5>
+                        <span class="badge ${badgeType} small">${subTitle}</span>
+                    </div>
+                </div>
+                
+                <div class="d-flex gap-2">
+                    <div class="dropdown">
+                        <button class="btn btn-light border dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                            <i class="bi bi-gear-fill me-1"></i> Utiliti
+                        </button>
+                        <ul class="dropdown-menu shadow">
+                            <li><a class="dropdown-item" href="#" onclick="jalankanSync('${eventId}', '${heatId}', '${labelAcara}')"><i class="bi bi-arrow-repeat me-2"></i>Sync No. Bib</a></li>
+                            <li><a class="dropdown-item text-danger" href="#" onclick="agihanAuto('${eventId}', '${heatId}', '${labelAcara}')"><i class="bi bi-people-fill me-2"></i>Tarik Semua Peserta (Reset)</a></li>
+                        </ul>
+                    </div>
+
+                    <button class="btn btn-info text-white shadow-sm" id="btn-toggle-print" onclick="togglePrintMode()">
+                        <i class="bi bi-printer me-2"></i>Preview Cetak
+                    </button>
+
+                    <button class="btn btn-success shadow-sm fw-bold" id="btn-simpan-utama" onclick="laksanaSimpan()">
+                        <i class="bi bi-save me-2"></i>SIMPAN
+                    </button>
+                </div>
+            </div>
+
+            <div class="text-center mb-4 print-header">
+                <h2 class="fw-bold text-uppercase mb-1">${labelAcara}</h2>
+                <div class="d-inline-block border border-dark border-2 px-4 py-1 rounded">
+                    <h4 class="fw-bold mb-0">${subTitle}</h4>
+                </div>
+            </div>
+        `;
+
+        // Render Body mengikut jenis acara
+        let htmlBody = '';
+        if (isHighJump) {
+            htmlBody = generateHighJumpTable(data);
+        } else if (isField) {
+            htmlBody = generateFieldTable(data);
+        } else {
+            htmlBody = generateTrackTable(data);
+        }
+
+        // Render Footer (Tandatangan untuk cetakan)
+        let htmlFooter = `
+            <div class="row mt-5 pt-5 d-none d-print-flex">
+                <div class="col-6 text-center">
+                    <p class="mb-5 fw-bold">Tandatangan Hakim Ketua:</p>
+                    <div class="border-bottom border-dark w-50 mx-auto"></div>
+                </div>
+                <div class="col-6 text-center">
+                    <p class="mb-5 fw-bold">Tandatangan Refri:</p>
+                    <div class="border-bottom border-dark w-50 mx-auto"></div>
+                </div>
+            </div>
+        `;
+
+        contentArea.innerHTML = htmlHeader + htmlBody + htmlFooter;
+
+    } catch (err) {
+        console.error(err);
+        contentArea.innerHTML = renderErrorAlert("Ralat kritikal semasa menjana borang.");
+    }
+};
+
+// ==============================================================================
+// BAHAGIAN H: GENERATOR JADUAL (TRACK, FIELD, HIGH JUMP)
+// ==============================================================================
+
+/**
+ * Menjana HTML jadual untuk acara balapan (Track).
+ * Mengandungi input Masa dan Kedudukan.
+ */
+function generateTrackTable(data) {
+    if (!data.peserta || data.peserta.length === 0) {
+        return `<div class="alert alert-warning text-center">Tiada peserta dalam saringan ini.</div>`;
+    }
+
+    // Susun mengikut lorong
+    data.peserta.sort((a,b) => a.lorong - b.lorong);
+
+    let html = `
+        <div class="table-responsive shadow-sm bg-white rounded p-1">
+            <table class="table table-bordered table-striped align-middle mb-0" id="table-results">
+                <thead class="table-dark text-center">
+                    <tr>
+                        <th width="70">Lorong</th>
+                        <th width="90">No. Bib</th>
+                        <th class="text-start">Nama Peserta</th>
+                        <th width="200">Masa / Keputusan</th>
+                        <th width="100">Kedudukan</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+
+    data.peserta.forEach((p, idx) => {
+        html += `
+            <tr data-idx="${idx}">
+                <td class="text-center fw-bold h5 bg-light">${p.lorong}</td>
+                <td class="text-center fw-bold text-secondary font-monospace">${p.noBib || '-'}</td>
+                <td>
+                    <div class="fw-bold text-dark">${p.nama}</div>
+                    <div class="small text-muted text-uppercase">RUMAH ${p.idRumah || '-'}</div>
+                </td>
+                <td class="p-2">
+                    <div class="print-only fw-bold text-center fs-5">${p.pencapaian || ''}</div>
+                    
+                    <input type="text" class="form-control text-center fw-bold input-result screen-only" 
+                           placeholder="--.--" value="${p.pencapaian || ''}">
+                </td>
+                <td class="p-2">
+                    <div class="print-only fw-bold text-center fs-5">${p.kedudukan || ''}</div>
+
+                    <input type="number" class="form-control text-center fw-bold input-rank screen-only" 
+                           min="0" max="10" value="${p.kedudukan > 0 ? p.kedudukan : ''}">
+                </td>
+            </tr>
+        `;
+    });
+
+    html += `</tbody></table></div>`;
+    return html;
+}
+
+/**
+ * Menjana HTML jadual untuk acara padang (Lompat Jauh, Peluru, dll).
+ * Mengandungi input untuk percubaan (trials).
+ */
+function generateFieldTable(data) {
+    if (!data.peserta || data.peserta.length === 0) return `<div class="alert alert-warning">Tiada Data.</div>`;
+
+    // Tentukan jumlah percubaan (Default 3, Akhir mungkin 6)
+    const numTrials = data.jenis === 'akhir' ? 6 : 3;
+    const trialsArr = Array.from({length: numTrials}, (_, i) => i);
+
+    let headerCols = trialsArr.map(i => `<th>${i+1}</th>`).join('');
+
+    let html = `
+        <div class="table-responsive shadow-sm bg-white rounded p-1">
+            <table class="table table-bordered table-hover text-center align-middle mb-0" id="table-results">
+                <thead class="table-dark small">
+                    <tr>
+                        <th width="50">No</th>
+                        <th width="80">Bib</th>
+                        <th class="text-start">Nama</th>
+                        ${headerCols}
+                        <th class="bg-primary bg-opacity-75">Terbaik</th>
+                        <th width="70">Rank</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+
+    data.peserta.forEach((p, idx) => {
+        // Pastikan array percubaan wujud
+        const tr = p.percubaan || [];
+
+        let trialInputs = trialsArr.map(i => {
+            const val = tr[i] || '';
+            return `
+                <td class="p-1" style="min-width: 60px;">
+                    <div class="print-only fw-bold">${val}</div>
+                    <input type="number" step="0.01" class="form-control form-control-sm text-center input-trial screen-only" 
+                           data-trial-idx="${i}" value="${val}">
+                </td>
+            `;
+        }).join('');
+
+        html += `
+            <tr data-idx="${idx}">
+                <td class="fw-bold bg-light">${idx + 1}</td>
+                <td class="fw-bold">${p.noBib || '-'}</td>
+                <td class="text-start">
+                    <div class="fw-bold text-truncate" style="max-width: 180px;">${p.nama}</div>
+                    <small class="text-muted">${p.idRumah}</small>
+                </td>
+                ${trialInputs}
+                <td class="bg-primary bg-opacity-10 fw-bold">
+                    <div class="print-only">${p.pencapaian || ''}</div>
+                    <input type="number" class="form-control form-control-sm text-center fw-bold input-result screen-only" 
+                           value="${p.pencapaian || ''}" readonly tabindex="-1"> 
+                           </td>
+                <td class="p-1">
+                    <div class="print-only fw-bold">${p.kedudukan || ''}</div>
+                    <input type="number" class="form-control form-control-sm text-center input-rank screen-only" 
+                           value="${p.kedudukan > 0 ? p.kedudukan : ''}">
+                </td>
+            </tr>
+        `;
+    });
+
+    html += `</tbody></table></div>`;
+    
+    // Tambah sedikit nota panduan
+    html += `<div class="mt-2 text-muted small d-print-none"><i class="bi bi-info-circle me-1"></i>Masukkan jarak dalam meter. Sistem akan menyimpan data percubaan.</div>`;
+
+    return html;
+}
+
+/**
+ * ==============================================================================
+ * GENERATOR JADUAL: LOMPAT TINGGI (HIGH JUMP) - VERSI KEMASKINI
+ * ==============================================================================
+ */
+function generateHighJumpTable(data) {
+    // 1. Dapatkan semua ketinggian unik yang pernah direkodkan
+    let allHeights = new Set();
+    if(data.peserta) {
+        data.peserta.forEach(p => {
+            if(p.rekodLompatan) Object.keys(p.rekodLompatan).forEach(ht => allHeights.add(ht));
+        });
+    }
+    
+    // Susun ketinggian (1.00, 1.05...)
+    let sortedCols = Array.from(allHeights).sort((a,b) => parseFloat(a) - parseFloat(b));
+    
+    // Jika tiada data langsung, sediakan 8 kolom kosong
+    if(sortedCols.length === 0) sortedCols = Array(8).fill('');
+
+    let html = `
+        <div class="d-flex justify-content-between align-items-center mb-2 d-print-none bg-light p-2 rounded border">
+            <small class="text-muted"><i class="bi bi-info-circle me-1"></i>Gunakan butang '+' untuk menambah ketinggian palang.</small>
+            <button class="btn btn-sm btn-dark rounded-pill shadow-sm" onclick="tambahKetinggianBaru()">
+                <i class="bi bi-plus-lg text-success"></i> Tambah Ketinggian
+            </button>
+        </div>
+
+        <div class="table-responsive shadow-sm bg-white rounded p-1">
+            <table class="table table-bordered text-center align-middle mb-0 table-sm border-secondary" id="hj-table">
+                <thead class="bg-white text-dark border-bottom border-dark small">
+                    <tr>
+                        <th width="40" class="py-2">No</th>
+                        <th width="60" class="py-2">Bib</th>
+                        <th class="text-start py-2" style="min-width: 180px;">Nama</th>
+                        
+                        ${sortedCols.map(ht => {
+                            let label = ht ? parseFloat(ht).toFixed(2) + 'm' : '';
+                            return `<th class="col-height py-2" data-val="${ht}" style="min-width:45px;">${label}</th>`;
+                        }).join('')}
+                        
+                        <th width="70" class="bg-light border-start border-secondary py-2">Best</th>
+                        <th width="50" class="py-2">Rank</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+
+    if (!data.peserta || data.peserta.length === 0) {
+        html += `<tr><td colspan="${5 + sortedCols.length}">Tiada Peserta.</td></tr>`;
+    } else {
+        data.peserta.forEach((p, idx) => {
+            html += `<tr data-idx="${idx}">
+                <td>${idx+1}</td>
+                <td class="fw-bold">${p.noBib||'-'}</td>
+                <td class="text-start">
+                    <div class="fw-bold text-truncate">${p.nama}</div>
+                    <small class="text-muted">${p.idRumah}</small>
+                </td>
+            `;
+
+            // Loop columns
+            sortedCols.forEach(ht => {
+                let cellVal = '';
+                if(ht && p.rekodLompatan && p.rekodLompatan[ht]) {
+                    cellVal = p.rekodLompatan[ht].join('');
+                }
+                
+                html += `
+                    <td class="p-0 position-relative">
+                        <div class="print-only fw-bold" style="min-height:25px; line-height:25px;">${cellVal}</div>
+                        <input type="text" class="form-control form-control-sm border-0 text-center p-0 screen-only input-hj font-monospace fw-bold text-uppercase" 
+                               style="letter-spacing:2px; height:100%; min-height: 30px;"
+                               data-ht="${ht}" value="${cellVal}" maxlength="3">
+                    </td>
+                `;
+            });
+
+            html += `
+                <td class="bg-light fw-bold border-start border-secondary">
+                    ${p.pencapaian || ''}
+                </td>
+                <td>
+                    <div class="print-only">${p.kedudukan || ''}</div>
+                    <input type="number" class="form-control form-control-sm text-center screen-only input-rank" 
+                           value="${p.kedudukan > 0 ? p.kedudukan : ''}">
+                </td>
+            </tr>`;
+        });
+    }
+
+    html += `</tbody></table></div>`;
+    return html;
+}
+
+/**
+ * Fungsi Tambah Ketinggian (Lompat Tinggi)
+ * Menggunakan manipulasi DOM terus untuk update pantas tanpa refresh
+ */
+window.tambahKetinggianBaru = () => {
+    const val = prompt("Masukkan ketinggian palang (m):", "1.xx");
+    if (!val || isNaN(val)) return;
+    
+    const formatted = parseFloat(val).toFixed(2);
+    
+    // 1. Update Cache Data (Supaya bila tekan SIMPAN, kolom baru ini wujud)
+    if(window.currentHeatDataCache && window.currentHeatDataCache.peserta) {
+        window.currentHeatDataCache.peserta.forEach(p => {
+            if(!p.rekodLompatan) p.rekodLompatan = {};
+            // Init empty array untuk ketinggian baru
+            if(!p.rekodLompatan[formatted]) p.rekodLompatan[formatted] = [];
+        });
+    }
+
+    // 2. Update Interface (DOM) Terus - Lebih Pantas & Stabil
+    const table = document.getElementById('hj-table');
+    if (!table) return;
+
+    // A. Tambah Header (Sebelum 2 kolom terakhir: Best & Rank)
+    const theadRow = table.querySelector('thead tr');
+    const insertIdx = theadRow.children.length - 2; // Posisi sebelum Best
+    
+    const th = document.createElement('th');
+    th.className = "col-height py-2 animate__animated animate__fadeIn";
+    th.setAttribute('data-val', formatted);
+    th.style.minWidth = "45px";
+    th.innerText = formatted + 'm';
+    
+    theadRow.insertBefore(th, theadRow.children[insertIdx]);
+
+    // B. Tambah Input pada setiap baris peserta
+    const tbodyRows = table.querySelectorAll('tbody tr');
+    tbodyRows.forEach(row => {
+        const td = document.createElement('td');
+        td.className = "p-0 position-relative animate__animated animate__fadeIn";
+        td.innerHTML = `
+            <div class="print-only fw-bold" style="min-height:25px; line-height:25px;"></div>
+            <input type="text" class="form-control form-control-sm border-0 text-center p-0 screen-only input-hj font-monospace fw-bold text-uppercase" 
+                   style="letter-spacing:2px; height:100%; min-height: 30px;"
+                   data-ht="${formatted}" value="" maxlength="3">
+        `;
+        row.insertBefore(td, row.children[insertIdx]);
+    });
+};
+
+
+// ==============================================================================
+// BAHAGIAN I: LOGIK SIMPAN & CETAK
+// ==============================================================================
+
+/**
+ * Mengumpul semua data dari input dalam jadual dan menghantar ke Firebase.
+ */
+window.laksanaSimpan = async () => {
+    const btn = document.getElementById('btn-simpan-utama');
+    const originalText = btn.innerHTML;
+    
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Menyimpan...';
+
+    try {
+        const { eventId, heatId } = window.activeContext;
+        const currentData = window.currentHeatDataCache.peserta;
+        
+        // Clone array untuk elak mutasi langsung yang pelik
+        let updatedPeserta = JSON.parse(JSON.stringify(currentData));
+
+        // Kesan jenis table berdasarkan elemen DOM yang wujud
+        const isTrack = document.querySelector('.input-result') && !document.querySelector('.input-trial');
+        const isField = document.querySelector('.input-trial');
+        const isHJ = document.querySelector('#hj-table');
+
+        // 1. LOGIK TRACK
+        if (isTrack && !isField && !isHJ) {
+            document.querySelectorAll('#table-results tbody tr').forEach(row => {
+                const idx = row.getAttribute('data-idx');
+                const res = row.querySelector('.input-result').value;
+                const rank = row.querySelector('.input-rank').value;
+                
+                updatedPeserta[idx].pencapaian = res.toUpperCase();
+                updatedPeserta[idx].kedudukan = rank ? parseInt(rank) : 0;
+            });
+        }
+
+        // 2. LOGIK FIELD
+        if (isField) {
+            document.querySelectorAll('#table-results tbody tr').forEach(row => {
+                const idx = row.getAttribute('data-idx');
+                const rank = row.querySelector('.input-rank').value;
+                
+                // Ambil trials
+                let trials = [];
+                row.querySelectorAll('.input-trial').forEach(inp => {
+                    const val = parseFloat(inp.value);
+                    trials.push(isNaN(val) ? 0 : val); // Simpan nombor
+                });
+
+                updatedPeserta[idx].percubaan = trials;
+                updatedPeserta[idx].kedudukan = rank ? parseInt(rank) : 0;
+                
+                // Auto-Calculate Best
+                const max = Math.max(...trials);
+                updatedPeserta[idx].pencapaian = max > 0 ? max.toFixed(2) : "";
+            });
+        }
+
+        // 3. LOGIK HIGH JUMP
+        if (isHJ) {
+            document.querySelectorAll('#hj-table tbody tr').forEach(row => {
+                const idx = row.getAttribute('data-idx');
+                const rank = row.querySelector('.input-rank').value;
+                
+                let jumps = {};
+                row.querySelectorAll('.input-hj').forEach(inp => {
+                    const h = inp.getAttribute('data-ht');
+                    const val = inp.value.toUpperCase();
+                    if(h && val) {
+                        jumps[h] = val.split(''); // 'XO' -> ['X','O']
+                    }
+                });
+
+                updatedPeserta[idx].rekodLompatan = jumps;
+                updatedPeserta[idx].kedudukan = rank ? parseInt(rank) : 0;
+                // Kalkulasi Best Height guna modul luaran
+                updatedPeserta[idx].pencapaian = highJumpLogic.getBestHeight(jumps);
+            });
+        }
+
+        // Hantar ke Firebase
+        const res = await saveHeatResults(tahunAktif, eventId, heatId, updatedPeserta);
+
+        if (res.success) {
+            // Update cache tempatan
+            window.currentHeatDataCache.peserta = updatedPeserta;
+            
+            // UI Feedback
+            btn.classList.remove('btn-success');
+            btn.classList.add('btn-dark');
+            btn.innerHTML = '<i class="bi bi-check-all me-2"></i>Data Disimpan!';
+            
+            setTimeout(() => {
+                btn.classList.remove('btn-dark');
+                btn.classList.add('btn-success');
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+                
+                // Refresh Paparan untuk update nilai calculated (macam Best Height)
+                paparkanPerincianSaringan(window.activeContext.eventId, window.activeContext.heatId, window.activeContext.labelAcara, window.activeContext.jenisSaringan);
+            }, 1000);
+        } else {
+            throw new Error(res.message);
+        }
+
+    } catch (e) {
+        console.error(e);
+        alert("Gagal menyimpan data: " + e.message);
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    }
+};
+
+/**
+ * Togol antara Mod Paparan Biasa (Input) dan Mod Preview (Text).
+ * Apabila mod preview aktif, butang cetak sebenar akan dipanggil.
+ */
+window.togglePrintMode = () => {
+    const btn = document.getElementById('btn-toggle-print');
+    const isPreviewing = btn.classList.contains('btn-danger'); // Flag based on class
+
+    if (!isPreviewing) {
+        // Masuk Mod Preview
+        document.body.classList.add('print-preview-active');
+        btn.classList.remove('btn-info');
+        btn.classList.add('btn-danger');
+        btn.innerHTML = '<i class="bi bi-x-circle me-2"></i>Tutup Preview';
+        
+        // Panggil window.print() secara automatik selepas delay sedikit
+        setTimeout(() => {
+            window.print();
+        }, 500);
+
+    } else {
+        // Keluar Mod Preview
+        document.body.classList.remove('print-preview-active');
+        btn.classList.remove('btn-danger');
+        btn.classList.add('btn-info');
+        btn.innerHTML = '<i class="bi bi-printer me-2"></i>Preview Cetak';
+    }
+};
+
+// ==============================================================================
+// BAHAGIAN J: UTILITI TAMBAHAN & HELPER FUNCTIONS
+// ==============================================================================
+
+/**
+ * Menyuntik CSS untuk mengawal paparan semasa mencetak (Hide Inputs, Show Text).
+ * Ini memastikan borang nampak profesional bila dicetak walaupun input form wujud.
+ */
+function injectPrintStyles() {
+    const style = document.createElement('style');
+    style.innerHTML = `
+        /* Default: Sembunyikan text print-only */
+        .print-only { display: none; }
+        .print-header { display: none; }
+
+        /* Semasa Preview Cetak (Class di body) atau Media Print */
+        @media print, screen and (min-width: 0px) { 
+            body.print-preview-active .screen-only,
+            body.print-preview-active .btn, 
+            body.print-preview-active .navbar,
+            body.print-preview-active .d-print-none {
+                display: none !important;
+            }
+
+            body.print-preview-active .print-only {
+                display: block !important;
+            }
+
+            body.print-preview-active .print-header {
+                display: block !important;
+            }
+            
+            body.print-preview-active .card, 
+            body.print-preview-active .shadow-sm {
+                box-shadow: none !important;
+                border: none !important;
+            }
+        }
+
+        /* Native Print Dialog Override */
+        @media print {
+            .screen-only, .btn, .no-print, header, nav { display: none !important; }
+            .print-only { display: block !important; }
+            .print-header { display: block !important; }
+            .card { border: none !important; box-shadow: none !important; }
+            .table-dark { color: black !important; background-color: transparent !important; border-bottom: 2px solid black; }
+            body { background: white; -webkit-print-color-adjust: exact; }
+            
+            /* Paksa page break */
+            .page-break { page-break-after: always; }
+        }
+    `;
+    document.head.appendChild(style);
+}
+
+// Utiliti: Spinner HTML
+function renderLoadingSpinner(text) {
+    return `
+        <div class="d-flex flex-column align-items-center justify-content-center py-5" style="min-height: 300px;">
+            <div class="spinner-border text-primary mb-3" role="status" style="width: 3rem; height: 3rem;"></div>
+            <h5 class="text-muted animate__animated animate__pulse animate__infinite">${text}</h5>
+        </div>
+    `;
+}
+
+// Utiliti: Error Alert
+function renderErrorAlert(msg) {
+    return `
+        <div class="alert alert-danger shadow-sm m-4" role="alert">
+            <h4 class="alert-heading"><i class="bi bi-exclamation-triangle-fill me-2"></i>Ralat Sistem</h4>
+            <p>${msg}</p>
+            <hr>
+            <button class="btn btn-outline-danger btn-sm" onclick="window.location.reload()">Muat Semula Halaman</button>
+        </div>
+    `;
+}
+
+// Utiliti: Log System (Boleh dikembangkan untuk simpan ke Firestore jika perlu)
+function logSystemAction(type, desc) {
+    const logEntry = `[${new Date().toLocaleTimeString()}] [${type}] ${desc}`;
+    console.log(logEntry);
+    
+    // Simpan history log dalam session storage untuk debug
+    let logs = JSON.parse(sessionStorage.getItem('sys_logs') || '[]');
+    logs.push(logEntry);
+    sessionStorage.setItem('sys_logs', JSON.stringify(logs.slice(-50))); // Simpan last 50
+}
+
+// ==============================================================================
+// BAHAGIAN K: UTILITI IMPORT/EXPORT & SYNC (Code Lama Dikemaskini)
+// ==============================================================================
+
+// Fungsi Sync No Bip
+window.jalankanSync = async (eventId, heatId, label) => {
+    if(!confirm(`Adakah anda pasti mahu mengemaskini No. Bip semua peserta dalam saringan ini berdasarkan data pendaftaran induk?`)) return;
+
+    try {
+        const heatRef = doc(db, "kejohanan", tahunAktif, "acara", eventId, "saringan", heatId);
+        const heatSnap = await getDoc(heatRef);
+        
+        if (heatSnap.exists()) {
+            const data = heatSnap.data();
+            
+            // Promise.all untuk concurrent fetching
+            const updated = await Promise.all(data.peserta.map(async (p) => {
+                const atletRef = doc(db, "kejohanan", tahunAktif, "peserta", p.idPeserta);
+                const atletSnap = await getDoc(atletRef);
+                
+                if (atletSnap.exists()) {
+                    const atletData = atletSnap.data();
+                    const realBib = atletData.noBib || atletData.noBip || p.noBib;
+                    return { ...p, noBib: realBib, noBip: realBib };
+                }
+                return p;
+            }));
+
+            await updateDoc(heatRef, { peserta: updated });
+            alert("Sync Selesai!");
+            paparkanPerincianSaringan(eventId, heatId, label, window.activeContext.jenisSaringan);
+        }
+    } catch (e) {
+        console.error(e);
+        alert("Ralat Sync: " + e.message);
+    }
+};
+
+// Fungsi Agihan Auto (Tarik Semula Peserta)
+window.agihanAuto = async (eventId, heatId, label) => {
+    const detail = await getEventDetail(tahunAktif, eventId);
+    
+    if (!confirm(`AMARAN KERAS: Data keputusan sedia ada dalam saringan ini akan HILANG. Sistem akan menarik semula semua peserta kategori ${detail.kategori} yang mendaftar acara ini. Teruskan?`)) return;
+
+    try {
+        const q = query(
+            collection(db, "kejohanan", tahunAktif, "peserta"),
+            where("kategori", "==", detail.kategori),
+            where("acaraDaftar", "array-contains", detail.nama)
+        );
+
+        const snap = await getDocs(q);
+        
+        // Randomize order a bit or just list them
+        const newData = snap.docs.map((d, i) => {
+            const dVal = d.data();
+            return {
+                idPeserta: d.id,
+                nama: dVal.nama,
+                noBib: dVal.noBib || dVal.noBip || '-',
+                idRumah: dVal.rumah || dVal.idRumah,
+                lorong: i + 1,
+                pencapaian: "",
+                kedudukan: 0
+            };
+        });
+
+        const heatRef = doc(db, "kejohanan", tahunAktif, "acara", eventId, "saringan", heatId);
+        await updateDoc(heatRef, { peserta: newData });
+
+        alert(`Reset Selesai. ${newData.length} peserta dimasukkan.`);
+        paparkanPerincianSaringan(eventId, heatId, label, window.activeContext.jenisSaringan);
+
+    } catch (e) {
+        alert("Ralat: " + e.message);
+    }
+};
+
+// Fungsi CSV Upload (Kekal sama tapi lebih kemas)
 document.getElementById('btn-proses-csv')?.addEventListener('click', async () => {
-    // ... (Logic CSV sama seperti sebelum ini, dipendekkan untuk brevity tapi berfungsi)
-    const input = document.getElementById('file-csv');
-    if(!input.files[0]) return;
+    const fileInput = document.getElementById('file-csv');
+    const btn = document.getElementById('btn-proses-csv');
+    const file = fileInput.files[0];
+
+    if (!file) return alert("Sila pilih fail CSV.");
+
+    btn.disabled = true;
+    btn.innerHTML = 'Memproses...';
+
     const reader = new FileReader();
     reader.onload = async (e) => {
         const lines = e.target.result.split('\n');
-        let recs = [];
-        for(let i=1; i<lines.length; i++) {
-            const cols = lines[i].split(',');
-            if(cols.length>=2) recs.push({rekod:cols[0], acara:cols[1], kategori:cols[2], tahun:cols[3], nama:cols[4]});
+        const records = [];
+        
+        for (let i = 1; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (!line) continue;
+            const [rekod, acara, kat, thn, nama] = line.split(',');
+            if (rekod) records.push({ rekod, acara, kategori: kat, tahun: thn, nama });
         }
-        await saveBulkRecords(recs);
-        alert("CSV Done.");
+
+        if (records.length > 0) {
+            await saveBulkRecords(records);
+            alert("CSV Berjaya Diimport.");
+            bootstrap.Modal.getInstance(document.getElementById('modalCSV')).hide();
+        }
+        
+        btn.disabled = false;
+        btn.innerHTML = 'Mula Proses';
+        fileInput.value = "";
     };
-    reader.readAsText(input.files[0]);
+    reader.readAsText(file);
 });
 
-document.getElementById('btn-laksana-restore')?.addEventListener('click', async () => {
-    const input = document.getElementById('file-restore');
-    if(!input.files[0]) return;
-    if(!confirm("Overwrite data?")) return;
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-        const data = JSON.parse(e.target.result);
-        let batch = writeBatch(db);
-        let c=0;
-        for(let col in data) {
-            for(let id in data[col]) {
-                batch.set(doc(db, "kejohanan", tahunAktif, col, id), data[col][id], {merge:true});
-                c++; if(c>400){await batch.commit(); batch=writeBatch(db); c=0;}
-            }
-        }
-        if(c>0) await batch.commit();
-        alert("Restore Done. Reloading...");
-        location.reload();
-    };
-    reader.readAsText(input.files[0]);
+// ==============================================================================
+// BAHAGIAN L: INIT
+// ==============================================================================
+
+// Pastikan DOM sedia sebelum memuatkan data
+document.addEventListener('DOMContentLoaded', () => {
+    // Mulakan di dashboard setup
+    renderSetupDashboard();
 });
 
-document.getElementById('btn-laksana-padam')?.addEventListener('click', async () => {
-    const sah = document.getElementById('input-pengesahan-padam').value;
-    if(sah !== 'SAH PADAM') return alert("Taip SAH PADAM");
-    
-    // Logic Padam (Simplified for single file)
-    const jenis = document.getElementById('select-padam-jenis').value;
-    if(jenis === 'semua' || jenis === 'peserta') {
-         const s = await getDocs(collection(db, "kejohanan", tahunAktif, "peserta"));
-         let b = writeBatch(db); let c=0;
-         s.forEach(d=>{b.delete(d.ref); c++; if(c>400){b.commit(); b=writeBatch(db); c=0;}});
-         if(c>0) await b.commit();
-    }
-    alert("Padam Selesai.");
-    location.reload();
-});
-
-
-// ==============================================================================
-// BAHAGIAN 6: ACARA & SARINGAN (DISPLAY LOGIC)
-// ==============================================================================
-
-window.renderSenaraiAcara = async (mode) => {
-    contentArea.innerHTML = '<div class="text-center py-5"><div class="spinner-border"></div></div>';
-    try {
-        let events = [];
-        const snap = await getDocs(collection(db, "kejohanan", tahunAktif, "acara"));
-        snap.forEach(d => events.push({id: d.id, ...d.data()}));
-        events.sort((a,b) => a.nama.localeCompare(b.nama));
-
-        const track = events.filter(e => e.kategori === 'balapan');
-        const field = events.filter(e => e.kategori === 'padang');
-
-        const card = (ev) => `
-        <div class="col-md-4 mb-3">
-            <div class="card h-100 shadow-sm border-0" onclick="pilihAcara('${ev.id}','${ev.nama}','${mode}')" style="cursor:pointer">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between mb-2">
-                        <span class="badge bg-primary">${ev.kelas||'Terbuka'}</span>
-                        <span class="badge bg-${ev.status==='selesai'?'success':'secondary'}">${ev.status||'Baru'}</span>
-                    </div>
-                    <h6 class="fw-bold">${ev.nama}</h6>
-                    <small class="text-muted">${ev.jenis||'Akhir'}</small>
-                </div>
-            </div>
-        </div>`;
-
-        let html = `<h4 class="mb-3">Senarai Acara</h4>`;
-        html += `<h5 class="text-success mt-4">Padang</h5><div class="row">${field.map(card).join('')}</div>`;
-        html += `<h5 class="text-danger mt-4">Balapan</h5><div class="row">${track.map(card).join('')}</div>`;
-        contentArea.innerHTML = html;
-    } catch(e) { contentArea.innerHTML = `Error: ${e.message}`; }
-};
-
-window.pilihAcara = async (eventId, label, mode) => {
-    contentArea.innerHTML = 'Loading Heats...';
-    try {
-        const heats = await getHeatsData(tahunAktif, eventId);
-        
-        let html = `
-            <button class="btn btn-sm btn-outline-secondary mb-3" onclick="renderSenaraiAcara('${mode}')">< Back</button>
-            <h4 class="fw-bold mb-3">${label}</h4>
-        `;
-
-        if (heats.length === 0) {
-            html += `<div class="alert alert-warning">Tiada saringan. 
-                <button id="btn-jana" class="btn btn-dark btn-sm ms-2">Jana Auto</button>
-            </div>`;
-        } else {
-            heats.sort((a,b) => parseInt(a.noSaringan) - parseInt(b.noSaringan));
-            html += `<div class="list-group">`;
-            heats.forEach(h => {
-                html += `
-                <button class="list-group-item list-group-item-action d-flex justify-content-between p-3 mb-2 border rounded" 
-                    onclick="pilihSaringan('${eventId}', '${h.id}', '${label}', '${mode}')">
-                    <span>${h.jenis==='akhir'?'AKHIR':`SARINGAN ${h.noSaringan}`} (${h.peserta?.length||0} Pax)</span>
-                    <span class="badge bg-${h.status==='selesai'?'success':'warning'}">${h.status}</span>
-                </button>`;
-            });
-            html += `</div>`;
-        }
-        contentArea.innerHTML = html;
-
-        // Listener Jana
-        const btnJana = document.getElementById('btn-jana');
-        if(btnJana) {
-            btnJana.onclick = async () => {
-                if(!confirm("Jana Saringan?")) return;
-                try {
-                    await generateHeats(tahunAktif, eventId);
-                    pilihAcara(eventId, label, mode);
-                } catch(e) { alert("Error: "+e.message); }
-            };
-        }
-    } catch(e) { console.error(e); }
-};
-
-// ==============================================================================
-// BAHAGIAN 7: INPUT BORANG (LOGIC UTAMA)
-// ==============================================================================
-
-window.pilihSaringan = async (eventId, heatId, label, mode) => {
-    contentArea.innerHTML = 'Opening Form...';
-    try {
-        const snap = await getDoc(doc(db, "kejohanan", tahunAktif, "acara", eventId, "saringan", heatId));
-        if(!snap.exists()) return;
-        const data = snap.data();
-
-        // Get Record Info
-        let recordText = "Tiada Rekod";
-        window.currentRecordData = null;
-        const evDoc = await getDoc(doc(db, "kejohanan", tahunAktif, "acara", eventId));
-        if(evDoc.exists() && evDoc.data().rekodSemasa) {
-            window.currentRecordData = evDoc.data().rekodSemasa;
-            recordText = `${window.currentRecordData.catatan} (${window.currentRecordData.pemegang})`;
-        }
-
-        // Global State Update
-        window.currentHeatData = data;
-        window.currentHeatId = heatId;
-        window.currentEventId = eventId;
-        window.currentLabel = label;
-        window.currentMode = mode;
-
-        const isHighJump = label.toUpperCase().includes("LOMPAT TINGGI");
-        const isField = ACARA_PADANG.some(ap => label.toUpperCase().includes(ap));
-
-        let html = `
-            <div class="d-flex justify-content-between mb-3 d-print-none">
-                <button class="btn btn-sm btn-secondary" onclick="pilihAcara('${eventId}','${label}','${mode}')">Kembali</button>
-                <div class="d-flex gap-2">
-                    ${!data.peserta?.length ? `<button class="btn btn-sm btn-warning" onclick="agihLorongAuto('${eventId}','${heatId}','${label}','${mode}')">Tarik Peserta Auto</button>` : ''}
-                    <button class="btn btn-sm btn-success" onclick="window.print()">Cetak</button>
-                </div>
-            </div>
-            <div class="text-center mb-4 border-bottom pb-2">
-                <h3 class="fw-bold">${label}</h3>
-                <span class="badge bg-dark">${data.jenis==='akhir'?'AKHIR':`SARINGAN ${data.noSaringan}`}</span>
-                <span class="text-muted small ms-2">Rekod: ${recordText}</span>
-                <div id="new-record-alert" class="alert alert-warning mt-2 d-none fw-bold">REKOD BARU DIPECAHKAN!</div>
-            </div>
-        `;
-
-        if(isHighJump) html += renderHighJumpTable(data, mode==='view');
-        else if(isField) html += renderFieldTable(data, mode==='view');
-        else html += renderTrackTable(data, mode==='view');
-
-        contentArea.innerHTML = html;
-    } catch(e) { console.error(e); }
-};
-
-// --- RENDER FUNCTIONS ---
-
-function renderTrackTable(h, readOnly) {
-    let t = `<div class="table-responsive"><table class="table table-bordered text-center align-middle">
-    <thead class="table-dark"><tr><th>Lorong</th><th class="text-start">Nama</th><th>Masa</th><th>Ked</th></tr></thead><tbody>`;
-    
-    if(!h.peserta?.length) return t + `<tr><td colspan="4">Tiada peserta.</td></tr></tbody></table></div>`;
-    
-    h.peserta.sort((a,b) => parseInt(a.lorong) - parseInt(b.lorong));
-    h.peserta.forEach((p,i) => {
-        t += `<tr class="${p.pecahRekod?'table-warning':''}" data-idx="${i}">
-            <td class="fw-bold bg-light">${p.lorong}</td>
-            <td class="text-start">
-                <div class="fw-bold">${p.nama}</div>
-                <small class="text-muted">${p.noBib} (${p.sekolah||p.idRumah})</small>
-            </td>
-            <td>${readOnly ? (p.pencapaian||'-') : `<input class="form-control text-center fw-bold res-input" data-idx="${i}" value="${p.pencapaian||''}" placeholder="00.00">`}</td>
-            <td>${readOnly ? (p.kedudukan||'-') : `<input type="number" class="form-control text-center ked-input" data-idx="${i}" value="${p.kedudukan||''}">`}</td>
-        </tr>`;
-    });
-    t += `</tbody></table></div>`;
-    if(!readOnly) t += `<button class="btn btn-primary w-100 mt-3 d-print-none" id="btn-save-results">SIMPAN</button>`;
-    return t;
-}
-
-function renderFieldTable(h, readOnly) {
-    let t = `<div class="table-responsive"><table class="table table-bordered text-center align-middle">
-    <thead class="table-dark"><tr><th>No</th><th class="text-start">Nama</th><th>Jarak (m)</th><th>Ked</th></tr></thead><tbody>`;
-    
-    if(!h.peserta?.length) return t + `<tr><td colspan="4">Tiada peserta.</td></tr></tbody></table></div>`;
-    
-    h.peserta.sort((a,b) => (a.noBib||'').localeCompare(b.noBib||''));
-    h.peserta.forEach((p,i) => {
-        t += `<tr class="${p.pecahRekod?'table-warning':''}" data-idx="${i}">
-            <td>${i+1}</td>
-            <td class="text-start">
-                <div class="fw-bold">${p.nama}</div>
-                <small class="text-muted">${p.noBib}</small>
-            </td>
-            <td>${readOnly ? (p.pencapaian||'-') : `<input class="form-control text-center fw-bold res-input" data-idx="${i}" value="${p.pencapaian||''}">`}</td>
-            <td>${readOnly ? (p.kedudukan||'-') : `<input type="number" class="form-control text-center ked-input" data-idx="${i}" value="${p.kedudukan||''}">`}</td>
-        </tr>`;
-    });
-    t += `</tbody></table></div>`;
-    if(!readOnly) t += `<button class="btn btn-primary w-100 mt-3 d-print-none" id="btn-save-results">SIMPAN</button>`;
-    return t;
-}
-
-function renderHighJumpTable(h, readOnly) {
-    // Collect Heights
-    let heights = new Set();
-    if(h.peserta) h.peserta.forEach(p => { if(p.rekodLompatan) Object.keys(p.rekodLompatan).forEach(k => heights.add(k)); });
-    let cols = Array.from(heights).sort((a,b) => parseFloat(a) - parseFloat(b));
-
-    let t = ``;
-    if(!readOnly) t+=`<button class="btn btn-sm btn-dark mb-2 d-print-none" id="btn-add-height">+ Height</button>`;
-    
-    t += `<div class="table-responsive"><table class="table table-bordered text-center table-sm">
-        <thead class="table-dark"><tr><th>Nama</th>${cols.map(c=>`<th>${c}m</th>`).join('')}<th>Best</th><th>Rank</th></tr></thead><tbody>`;
-
-    if(!h.peserta?.length) return t + `</tbody></table></div>`;
-
-    h.peserta.forEach((p,i) => {
-        t += `<tr data-idx="${i}" class="${p.pecahRekod?'table-warning':''}">
-            <td class="text-start"><div class="fw-bold">${p.nama}</div><small>${p.noBib}</small></td>
-            ${cols.map(c => {
-                const val = p.rekodLompatan?.[c]?.join('') || '';
-                return `<td>${readOnly ? val : `<input class="form-control form-control-sm text-center p-0 hj-input" data-ht="${c}" value="${val}" style="width:40px;margin:auto;">`}</td>`;
-            }).join('')}
-            <td>${readOnly ? (p.pencapaian||'') : `<input class="form-control form-control-sm text-center res-input" data-idx="${i}" value="${p.pencapaian||''}">`}</td>
-            <td>${readOnly ? (p.kedudukan||'') : `<input type="number" class="form-control form-control-sm text-center ked-input" data-idx="${i}" value="${p.kedudukan||''}">`}</td>
-        </tr>`;
-    });
-    t += `</tbody></table></div>`;
-    if(!readOnly) t += `<button class="btn btn-primary w-100 mt-3 d-print-none" id="btn-save-results">SIMPAN</button>`;
-    return t;
-}
-
-// ==============================================================================
-// BAHAGIAN 8: ACTION LISTENERS (SAVE, ADD HEIGHT, ETC)
-// ==============================================================================
-
-document.addEventListener('click', async (e) => {
-    
-    // --- SAVE RESULTS ---
-    if(e.target.closest('#btn-save-results')) {
-        const btn = document.querySelector('#btn-save-results');
-        btn.disabled = true; btn.innerText = "Saving...";
-        
-        try {
-            let peserta = JSON.parse(JSON.stringify(window.currentHeatData.peserta || []));
-            let recordBroken = false;
-            const currentRecVal = window.currentRecordData ? parseFloat(window.currentRecordData.catatan) : null;
-
-            peserta.forEach((p, idx) => {
-                const resInput = document.querySelector(`.res-input[data-idx="${idx}"]`);
-                const kedInput = document.querySelector(`.ked-input[data-idx="${idx}"]`);
-                
-                if(resInput) p.pencapaian = resInput.value.trim().toUpperCase();
-                if(kedInput) p.kedudukan = kedInput.value ? parseInt(kedInput.value) : 0;
-                
-                // Record Check
-                p.pecahRekod = false;
-                if(p.pencapaian && currentRecVal && !isNaN(parseFloat(p.pencapaian))) {
-                    const val = parseFloat(p.pencapaian);
-                    const isField = ACARA_PADANG.some(ap => window.currentLabel.toUpperCase().includes(ap));
-                    if(isField && val > currentRecVal) { p.pecahRekod = true; recordBroken = true; }
-                    else if(!isField && val < currentRecVal && val > 0) { p.pecahRekod = true; recordBroken = true; }
-                }
-
-                // High Jump specific
-                if(window.currentLabel.toUpperCase().includes("LOMPAT TINGGI")) {
-                    const row = document.querySelector(`tr[data-idx="${idx}"]`);
-                    if(row) {
-                        row.querySelectorAll('.hj-input').forEach(hjEl => {
-                            if(!p.rekodLompatan) p.rekodLompatan = {};
-                            p.rekodLompatan[hjEl.dataset.ht] = hjEl.value.toUpperCase().split('');
-                        });
-                    }
-                }
-            });
-
-            await saveHeatResults(tahunAktif, window.currentEventId, window.currentHeatId, peserta);
-            
-            // Auto finish event status if Akhir
-            if(window.currentHeatData.jenis === 'akhir') {
-                await updateDoc(doc(db, "kejohanan", tahunAktif, "acara", window.currentEventId), { status: 'selesai' });
-            }
-
-            alert("Disimpan!");
-            if(recordBroken) document.getElementById('new-record-alert').classList.remove('d-none');
-            pilihSaringan(window.currentEventId, window.currentHeatId, window.currentLabel, window.currentMode);
-
-        } catch(err) { 
-            console.error(err); alert("Save Fail: "+err.message); 
-        } finally {
-            if(btn) { btn.disabled = false; btn.innerText = "SIMPAN"; }
-        }
-    }
-
-    // --- ADD HEIGHT (HIGH JUMP) ---
-    if(e.target.closest('#btn-add-height')) {
-        const val = prompt("Height (e.g. 1.25):");
-        if(val) {
-            const num = parseFloat(val).toFixed(2);
-            window.currentHeatData.peserta.forEach(p => {
-                if(!p.rekodLompatan) p.rekodLompatan = {};
-                if(!p.rekodLompatan[num]) p.rekodLompatan[num] = [];
-            });
-            pilihSaringan(window.currentEventId, window.currentHeatId, window.currentLabel, window.currentMode);
-        }
-    }
-
-    // --- CALC OLAHRAGAWAN ---
-    if(e.target.id === 'btn-kira-olahragawan') {
-        const btn = e.target;
-        btn.disabled = true; btn.innerText = "Calculating...";
-        try {
-            const eventsSnap = await getDocs(collection(db, "kejohanan", tahunAktif, "acara"));
-            let stats = {};
-            
-            for(let evDoc of eventsSnap.docs) {
-                const heatSnap = await getDocs(collection(db, "kejohanan", tahunAktif, "acara", evDoc.id, "saringan"));
-                heatSnap.forEach(hDoc => {
-                    const h = hDoc.data();
-                    if(h.jenis === 'akhir' && h.peserta) {
-                        h.peserta.forEach(p => {
-                            if(!p.idPeserta) return;
-                            if(!stats[p.idPeserta]) stats[p.idPeserta] = { 
-                                nama:p.nama, rumah:p.idRumah, kat:evDoc.data().kategori, 
-                                emas:0, perak:0, gangsa:0, rekod:0 
-                            };
-                            if(p.kedudukan===1) stats[p.idPeserta].emas++;
-                            if(p.kedudukan===2) stats[p.idPeserta].perak++;
-                            if(p.kedudukan===3) stats[p.idPeserta].gangsa++;
-                            if(p.pecahRekod) stats[p.idPeserta].rekod++;
-                        });
-                    }
-                });
-            }
-            
-            // Render logic here (simplified for brevity)
-            const sorted = Object.values(stats).sort((a,b) => b.emas - a.emas);
-            // ... Update DOM ...
-            alert("Dikira! (Semak Console/UI)");
-            console.log(sorted);
-
-        } catch(e) { console.error(e); }
-        btn.disabled = false; btn.innerText = "Kira Pemenang";
-    }
-});
-
-// --- AGIHAN AUTO ---
-window.agihLorongAuto = async (eventId, heatId, label, mode) => {
-    if(!confirm("Auto Assign? Data will be overwritten.")) return;
-    try {
-        const evSnap = await getDoc(doc(db, "kejohanan", tahunAktif, "acara", eventId));
-        if(!evSnap.exists()) return;
-        const evData = evSnap.data();
-
-        const q = query(collection(db, "kejohanan", tahunAktif, "peserta"), where("kategori", "==", evData.kategori));
-        const pSnap = await getDocs(q);
-        let valid = [];
-
-        pSnap.forEach(d => {
-            const p = d.data();
-            let reg = false;
-            if(p.acara && (
-               (Array.isArray(p.acara) && p.acara.includes(evData.nama)) ||
-               (typeof p.acara === 'string' && p.acara.includes(evData.nama))
-            )) reg = true;
-
-            if(reg) valid.push({
-                idPeserta:d.id, nama:p.nama, noBib:p.noBib||'-', idRumah:p.rumah||'', 
-                lorong:0, pencapaian:'', kedudukan:0
-            });
-        });
-
-        if(valid.length===0) return alert("Tiada peserta daftar.");
-        
-        valid = valid.map((p,i) => ({...p, lorong:i+1}));
-        await updateDoc(doc(db, "kejohanan", tahunAktif, "acara", eventId, "saringan", heatId), { peserta: valid });
-        
-        alert("Success.");
-        pilihSaringan(eventId, heatId, label, mode);
-    } catch(e) { alert("Err: "+e.message); }
-};
-
-/* END OF FILE main-admin.js */
+// End of File
