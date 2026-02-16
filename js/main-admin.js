@@ -419,6 +419,7 @@ async function renderSetupDashboard() {
     document.getElementById('btn-manage-house').onclick = () => {
         renderSenaraiRumah();
     };
+  }
 }
 
 // ==============================================================================
@@ -1791,6 +1792,7 @@ function updateWinnerCard(idTitle, idStats, data) {
     }
 }
 // End of File
+
 
 
 
