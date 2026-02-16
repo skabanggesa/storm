@@ -1739,7 +1739,42 @@ async function kiraStatistikPemenang(kategori, idTitle, idStats) {
         if(elTitle) elTitle.innerHTML = `<span class="text-danger small">Ralat Sistem</span>`;
     }
 }
+
+// ==============================================================================
+// BAHAGIAN O: FUNGSI HELPER UI (PENTING UNTUK DASHBOARD)
+// ==============================================================================
+
+function updateWinnerCard(idTitle, idStats, data) {
+    const elTitle = document.getElementById(idTitle);
+    const elStats = document.getElementById(idStats);
+
+    // Jika elemen tiada dalam HTML, abaikan (elakkan error)
+    if(!elTitle || !elStats) return;
+
+    if(data) {
+        // Jika ada pemenang, paparkan Nama & Statistik
+        elTitle.innerHTML = `
+            <h4 class="mb-0 fw-bold text-primary">${data.nama}</h4>
+            <div class="text-uppercase text-muted fw-bold small mt-1">${data.rumah}</div>
+        `;
+        elStats.innerHTML = `
+            <div class="d-flex justify-content-center gap-2 mt-3">
+                <span class="badge bg-danger rounded-pill px-3 py-2 border border-white shadow-sm">Rekod: ${data.rekod}</span>
+                <span class="badge bg-warning text-dark rounded-pill px-3 py-2 border border-white shadow-sm">Emas: ${data.emas}</span>
+            </div>
+            <div class="d-flex justify-content-center gap-2 mt-2">
+                <span class="badge bg-secondary rounded-pill px-2">Perak: ${data.perak}</span>
+                <span class="badge rounded-pill px-2" style="background:#cd7f32">Gangsa: ${data.gangsa}</span>
+            </div>
+        `;
+    } else {
+        // Jika tiada calon yang layak
+        elTitle.innerHTML = `<h5 class="mb-0 text-muted fst-italic">Tiada Calon</h5>`;
+        elStats.innerHTML = `<small class="text-muted">Belum ada pingat dimenangi.</small>`;
+    }
+}
 // End of File
+
 
 
 
