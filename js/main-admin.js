@@ -156,147 +156,148 @@ function setActiveMenu(activeId) {
 }
 
 // ==============================================================================
-// BAHAGIAN C: DASHBOARD UTAMA & SETUP (STATISTIK)
+// BAHAGIAN F: UI DASHBOARD (VERSI BERSIH & BETUL)
 // ==============================================================================
 
-/**
- * Memaparkan papan pemuka (dashboard) utama.
- * Mengandungi statistik ringkas dan menu utiliti sistem.
- */
 async function renderSetupDashboard() {
-    // Paparan Loading Sementara
-    contentArea.innerHTML = renderLoadingSpinner("Memuatkan Papan Pemuka...");
+    // 1. Pastikan kita cari ID yang betul ikut HTML anda (admin-backup.html)
+    const container = document.getElementById('main-content');
 
-    // Dapatkan statistik ringkas (count)
-    let stats = {
-        totalAcara: 0,
-        totalPeserta: 0,
-        totalRumah: 4
-    };
-
-    try {
-        // Kira Acara
-        const acaraSnap = await getDocs(collection(db, "kejohanan", tahunAktif, "acara"));
-        stats.totalAcara = acaraSnap.size;
-
-        // Kira Peserta (Batch limit untuk performance jika perlu, di sini kita ambil saiz sahaja)
-        const pesertaSnap = await getDocs(collection(db, "kejohanan", tahunAktif, "peserta"));
-        stats.totalPeserta = pesertaSnap.size;
-
-    } catch (e) {
-        console.error("Gagal memuatkan statistik:", e);
+    if (!container) {
+        alert("RALAT: Elemen 'main-content' tidak dijumpai. Sila refresh browser.");
+        return;
     }
 
+    // Paparan Loading
+    container.innerHTML = `
+        <div class="d-flex justify-content-center align-items-center" style="height: 300px;">
+            <div class="spinner-border text-primary me-2"></div> Memuatkan Dashboard...
+        </div>`;
+
+    // 2. Dapatkan Statistik Ringkas
+    let stats = { atlet: 0, acara: 0 };
+    try {
+        const pSnap = await getDocs(collection(db, "kejohanan", tahunAktif, "peserta"));
+        stats.atlet = pSnap.size;
+        const aSnap = await getDocs(collection(db, "kejohanan", tahunAktif, "acara"));
+        stats.acara = aSnap.size;
+    } catch (e) { console.log("Stat Error", e); }
+
+    // 3. Lukis HTML
     const html = `
-        <div class="container-fluid animate__animated animate__fadeIn">
-            <div class="row mb-4">
-                <div class="col-12">
-                    <h3 class="fw-bold text-dark border-start border-5 border-primary ps-3">
-                        Papan Pemuka & Tetapan (${tahunAktif})
-                    </h3>
-                    <p class="text-muted ms-3 mb-0">Pusat kawalan utama sistem pengurusan kejohanan.</p>
-                </div>
+        <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+            <h1 class="h2">Dashboard Admin (${tahunAktif})</h1>
+            <div class="btn-toolbar mb-2 mb-md-0">
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print()">
+                    <i class="bi bi-printer"></i> Cetak
+                </button>
             </div>
+        </div>
 
-            <div class="row mb-4">
-                <div class="col-md-4">
-                    <div class="card shadow-sm border-0 bg-primary text-white h-100">
-                        <div class="card-body d-flex align-items-center">
-                            <div class="display-4 me-3"><i class="bi bi-people-fill"></i></div>
-                            <div>
-                                <h5 class="card-title mb-0">Jumlah Atlet</h5>
-                                <h2 class="fw-bold mb-0">${stats.totalPeserta}</h2>
-                                <small>Peserta Berdaftar</small>
-                            </div>
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="card bg-primary text-white shadow-sm">
+                    <div class="card-body d-flex justify-content-between align-items-center">
+                        <div>
+                            <h2 class="fw-bold mb-0">${stats.atlet}</h2>
+                            <small>Jumlah Atlet</small>
                         </div>
-                    </div>
-                </div>
-                <div class="col-md-4">
-                    <div class="card shadow-sm border-0 bg-success text-white h-100">
-                        <div class="card-body d-flex align-items-center">
-                            <div class="display-4 me-3"><i class="bi bi-trophy-fill"></i></div>
-                            <div>
-                                <h5 class="card-title mb-0">Jumlah Acara</h5>
-                                <h2 class="fw-bold mb-0">${stats.totalAcara}</h2>
-                                <small>Dipertandingkan</small>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-4">
-                    <div class="card shadow-sm border-0 bg-info text-white h-100">
-                        <div class="card-body d-flex align-items-center">
-                            <div class="display-4 me-3"><i class="bi bi-house-door-fill"></i></div>
-                            <div>
-                                <h5 class="card-title mb-0">Rumah Sukan</h5>
-                                <h2 class="fw-bold mb-0">${stats.totalRumah}</h2>
-                                <small>Pasukan Bertanding</small>
-                            </div>
-                        </div>
+                        <i class="bi bi-people fs-1 opacity-50"></i>
                     </div>
                 </div>
             </div>
-
-            <div class="row">
-                <div class="col-lg-6 mb-4">
-                    <div class="card shadow-sm h-100">
-                        <div class="card-header bg-white fw-bold">
-                            <i class="bi bi-database-gear me-2 text-primary"></i>Operasi Pangkalan Data
+            <div class="col-md-6">
+                <div class="card bg-success text-white shadow-sm">
+                    <div class="card-body d-flex justify-content-between align-items-center">
+                        <div>
+                            <h2 class="fw-bold mb-0">${stats.acara}</h2>
+                            <small>Jumlah Acara</small>
                         </div>
-                        <div class="card-body">
-                            <p class="text-muted small">Fungsi untuk memulakan tahun baru atau mengemaskini struktur data asas.</p>
-                            
-                            <button class="btn btn-outline-primary w-100 mb-2 text-start" id="btn-init">
-                                <i class="bi bi-magic me-2"></i>Jana Struktur Awal (Tahun Baru)
-                            </button>
-                            
-                            <button class="btn btn-outline-success w-100 mb-2 text-start" id="btn-manage-house">
-                                <i class="bi bi-key me-2"></i>Urus Kata Laluan Rumah Sukan
-                            </button>
-
-                            <hr>
-
-                            <p class="text-muted small">Zon Bahaya & Penyelenggaraan:</p>
-                            <div class="d-flex gap-2">
-                                <button class="btn btn-sm btn-warning flex-fill" data-bs-toggle="modal" data-bs-target="#modalBackup">
-                                    <i class="bi bi-download me-1"></i>Backup
-                                </button>
-                                <button class="btn btn-sm btn-secondary flex-fill" data-bs-toggle="modal" data-bs-target="#modalRestore">
-                                    <i class="bi bi-upload me-1"></i>Restore
-                                </button>
-                                <button class="btn btn-sm btn-danger flex-fill" data-bs-toggle="modal" data-bs-target="#modalPadam">
-                                    <i class="bi bi-trash me-1"></i>Reset
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="col-lg-6 mb-4">
-                    <div class="card shadow-sm h-100">
-                        <div class="card-header bg-white fw-bold">
-                            <i class="bi bi-file-earmark-spreadsheet me-2 text-success"></i>Import Data Pukal
-                        </div>
-                        <div class="card-body">
-                            <p class="text-muted small">Muat naik fail CSV untuk mengemaskini rekod kejohanan terdahulu.</p>
-                            <div class="alert alert-light border small">
-                                <strong>Format CSV:</strong><br>
-                                <code>REKOD, ACARA, KATEGORI, TAHUN, NAMA</code>
-                            </div>
-                            <button class="btn btn-success w-100" data-bs-toggle="modal" data-bs-target="#modalCSV">
-                                <i class="bi bi-cloud-upload me-2"></i>Muat Naik CSV Rekod
-                            </button>
-                        </div>
+                        <i class="bi bi-trophy fs-1 opacity-50"></i>
                     </div>
                 </div>
             </div>
-            
-            <div id="house-list-container" class="mt-2"></div>
+        </div>
 
+        <div class="card shadow-sm mb-4 border-primary">
+            <div class="card-header bg-white py-3">
+                <h5 class="mb-0 text-primary fw-bold">
+                    <i class="bi bi-award-fill me-2"></i>Anugerah Khas Individu
+                </h5>
+                <small class="text-muted">Kriteria: Rekod > Emas > Perak > Gangsa</small>
+            </div>
+            <div class="card-body bg-light">
+                <div class="row text-center g-3">
+                    
+                    <div class="col-md-3">
+                        <div class="card h-100 border-0 shadow-sm p-3">
+                            <div class="fw-bold text-muted small">OLAHRAGAWAN (L1)</div>
+                            <div id="display-L1" class="my-3 py-2 border rounded bg-white fw-bold text-secondary">
+                                - Belum Dikira -
+                            </div>
+                            <button id="btn-kira-L1" class="btn btn-primary w-100 btn-sm">
+                                <i class="bi bi-calculator"></i> Kira L1
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="col-md-3">
+                        <div class="card h-100 border-0 shadow-sm p-3">
+                            <div class="fw-bold text-muted small">OLAHRAGAWATI (P1)</div>
+                            <div id="display-P1" class="my-3 py-2 border rounded bg-white fw-bold text-secondary">
+                                - Belum Dikira -
+                            </div>
+                            <button id="btn-kira-P1" class="btn btn-danger w-100 btn-sm">
+                                <i class="bi bi-calculator"></i> Kira P1
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="col-md-3">
+                        <div class="card h-100 border-0 shadow-sm p-3">
+                            <div class="fw-bold text-muted small">HARAPAN (LELAKI)</div>
+                            <div id="display-HL" class="my-3 py-2 border rounded bg-white fw-bold text-secondary">
+                                - Belum Dikira -
+                            </div>
+                            <button id="btn-kira-HL" class="btn btn-secondary w-100 btn-sm">
+                                <i class="bi bi-calculator"></i> Kira Harapan L
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="col-md-3">
+                        <div class="card h-100 border-0 shadow-sm p-3">
+                            <div class="fw-bold text-muted small">HARAPAN (PEREMPUAN)</div>
+                            <div id="display-HP" class="my-3 py-2 border rounded bg-white fw-bold text-secondary">
+                                - Belum Dikira -
+                            </div>
+                            <button id="btn-kira-HP" class="btn btn-secondary w-100 btn-sm">
+                                <i class="bi bi-calculator"></i> Kira Harapan P
+                            </button>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
         </div>
     `;
 
-    contentArea.innerHTML = html;
+    container.innerHTML = html;
+
+    // 4. SAMBUNGKAN BUTANG KE LOGIK (Event Listeners)
+    // Kita buat semakan 'if' supaya tidak error jika butang belum wujud
+    const btnL1 = document.getElementById('btn-kira-L1');
+    if (btnL1) btnL1.onclick = () => jalankanPengiraan('L1', 'display-L1');
+
+    const btnP1 = document.getElementById('btn-kira-P1');
+    if (btnP1) btnP1.onclick = () => jalankanPengiraan('P1', 'display-P1');
+
+    const btnHL = document.getElementById('btn-kira-HL');
+    if (btnHL) btnHL.onclick = () => jalankanPengiraan('HarapanL', 'display-HL');
+
+    const btnHP = document.getElementById('btn-kira-HP');
+    if (btnHP) btnHP.onclick = () => jalankanPengiraan('HarapanP', 'display-HP');
+}
 
     // --- BIND EVENT LISTENERS UNTUK DASHBOARD ---
 
@@ -1520,4 +1521,109 @@ document.addEventListener('DOMContentLoaded', () => {
     renderSetupDashboard();
 });
 
+// ==============================================================================
+// BAHAGIAN LOGIK OLAHRAGAWAN (BARU & DIPERBAIKI)
+// ==============================================================================
+
+async function jalankanPengiraan(kategoriTarget, displayID) {
+    const displayEl = document.getElementById(displayID);
+    const btnEl = document.getElementById(displayID.replace('display', 'btn-kira')); // Cari butang balik
+
+    // 1. UI Loading
+    displayEl.innerHTML = `<span class="spinner-border spinner-border-sm text-primary"></span> Mengira...`;
+    if(btnEl) btnEl.disabled = true;
+
+    try {
+        // 2. Tarik Data dari Firebase (Acara yang status == Selesai sahaja)
+        const q = query(collection(db, "kejohanan", tahunAktif, "acara"), where("status", "==", "Selesai"));
+        const snapshot = await getDocs(q);
+
+        let stats = {}; // Tempat simpan markah: { "Ali": {emas:1, rekod:0...} }
+
+        snapshot.forEach(doc => {
+            const data = doc.data(); // Data acara
+            const results = data.keputusan || []; // Array pemenang
+
+            // 3. Tapis Acara Ikut Kategori Target
+            let kategoriSah = false;
+            
+            if (kategoriTarget === 'L1' || kategoriTarget === 'P1') {
+                // Untuk Olahragawan Utama, kategori mesti TEPAT (contoh: L1)
+                if (data.kategori === kategoriTarget) kategoriSah = true;
+            } 
+            else if (kategoriTarget === 'HarapanL') {
+                // Untuk Harapan Lelaki, ambil kelas bawahan (L2, L3, L4...)
+                if (['L2', 'L3', 'L4', 'L5'].includes(data.kategori)) kategoriSah = true;
+            }
+            else if (kategoriTarget === 'HarapanP') {
+                // Untuk Harapan Perempuan (P2, P3, P4...)
+                if (['P2', 'P3', 'P4', 'P5'].includes(data.kategori)) kategoriSah = true;
+            }
+
+            if (kategoriSah) {
+                // 4. Proses Keputusan Peserta
+                results.forEach(p => {
+                    const nama = p.nama.trim(); // Guna nama sebagai ID
+                    if (!stats[nama]) {
+                        stats[nama] = { 
+                            nama: nama, 
+                            rumah: p.rumah, 
+                            emas: 0, perak: 0, gangsa: 0, rekod: 0 
+                        };
+                    }
+
+                    // Tambah Pingat
+                    if (p.pingat === "Emas") stats[nama].emas++;
+                    if (p.pingat === "Perak") stats[nama].perak++;
+                    if (p.pingat === "Gangsa") stats[nama].gangsa++;
+
+                    // --- PENTING: LOGIK KIRA REKOD ---
+                    // Kira sebagai rekod JIKA pingat Emas DAN (flag pecahRekod true ATAU catatan ada tulis RB/RK)
+                    const catatan = (p.catatan || "").toUpperCase();
+                    const adaRekod = (p.pecahRekod === true) || catatan.includes("RB") || catatan.includes("RK") || catatan.includes("REKOD");
+                    
+                    if (p.pingat === "Emas" && adaRekod) {
+                        stats[nama].rekod++;
+                    }
+                });
+            }
+        });
+
+        // 5. Susun Pemenang (SORTING)
+        // Logik: Rekod > Emas > Perak > Gangsa
+        let calon = Object.values(stats);
+        
+        calon.sort((a, b) => {
+            if (b.rekod !== a.rekod) return b.rekod - a.rekod; // Rekod dulu
+            if (b.emas !== a.emas) return b.emas - a.emas;     // Lepas tu Emas
+            if (b.perak !== a.perak) return b.perak - a.perak; // Lepas tu Perak
+            return b.gangsa - a.gangsa;                        // Last sekali Gangsa
+        });
+
+        // 6. Paparkan Pemenang
+        if (calon.length > 0) {
+            const juara = calon[0];
+            displayEl.innerHTML = `
+                <div class="text-primary fs-5 mb-1">${juara.nama}</div>
+                <div class="badge bg-secondary mb-2">${juara.rumah}</div>
+                <div class="d-flex justify-content-center gap-1 small">
+                    <span class="badge bg-danger border">R: ${juara.rekod}</span>
+                    <span class="badge bg-warning text-dark border">E: ${juara.emas}</span>
+                    <span class="badge bg-light text-dark border">P: ${juara.perak}</span>
+                    <span class="badge bg-light text-dark border">G: ${juara.gangsa}</span>
+                </div>
+            `;
+        } else {
+            displayEl.innerHTML = `<span class="text-muted fst-italic">Tiada Data</span>`;
+        }
+
+    } catch (err) {
+        console.error("Ralat Pengiraan:", err);
+        displayEl.innerHTML = `<span class="text-danger">Ralat Sistem</span>`;
+        alert("Ralat semasa mengira: " + err.message);
+    } finally {
+        if(btnEl) btnEl.disabled = false;
+    }
+}
 // End of File
+
