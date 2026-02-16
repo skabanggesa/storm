@@ -1633,165 +1633,115 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ==============================================================================
-// BAHAGIAN N: LOGIK OLAHRAGAWAN & STATISTIK
+// BAHAGIAN: LOGIK PENGIRAAN PEMENANG (DIPERBAIKI - UTAMAKAN REKOD)
 // ==============================================================================
 
-async function kiraStatistikPemenang(clickedBtn) {
-    // Simpan teks asal butang (cth: "Kira L12")
-    const originalText = clickedBtn.innerHTML;
-    
-    // UI Loading pada butang yang ditekan sahaja
-    clickedBtn.disabled = true; 
-    clickedBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
-
-    try {
-        console.log("Memulakan pengiraan statistik...");
-        
-        // 1. Tarik SEMUA acara dari database (Kita tarik semua supaya data tepat & sinkroni)
-        const eventsSnap = await getDocs(collection(db, "kejohanan", tahunAktif, "acara"));
-        
-        let allPesertaStats = {}; 
-
-        // Loop melalui setiap acara
-        for(let evDoc of eventsSnap.docs) {
-            const ev = evDoc.data();
-            const evId = evDoc.id;
-
-            // Tarik saringan
-            const heatSnap = await getDocs(collection(db, "kejohanan", tahunAktif, "acara", evId, "saringan"));
-            
-            heatSnap.forEach(hDoc => {
-                const h = hDoc.data();
-                
-                // HANYA KIRA KEPUTUSAN AKHIR YANG SELESAI
-                if(h.jenis === 'akhir' && h.status === 'selesai' && h.peserta && Array.isArray(h.peserta)) {
-                    
-                    h.peserta.forEach(p => {
-                        if(!p.idPeserta || !p.kedudukan) return;
-                        
-                        // Init data peserta
-                        if(!allPesertaStats[p.idPeserta]) {
-                            allPesertaStats[p.idPeserta] = {
-                                nama: p.nama,
-                                rumah: p.idRumah || '-',
-                                kategori: ev.kategori, 
-                                emas: 0, 
-                                perak: 0, 
-                                gangsa: 0, 
-                                rekod: 0
-                            };
-                        }
-
-                        // Logik Pingat
-                        if(p.kedudukan === 1) allPesertaStats[p.idPeserta].emas++;
-                        else if(p.kedudukan === 2) allPesertaStats[p.idPeserta].perak++;
-                        else if(p.kedudukan === 3) allPesertaStats[p.idPeserta].gangsa++;
-
-                        // Logik Rekod
-                        if(p.pecahRekod === true) allPesertaStats[p.idPeserta].rekod++;
-                    });
-                }
-            });
-        }
-
-        // 2. Fungsi Sorting (Rekod > Emas > Perak > Gangsa)
-        const sortWinners = (list) => {
-            return list.sort((a, b) => {
-                if(b.rekod !== a.rekod) return b.rekod - a.rekod;
-                if(b.emas !== a.emas) return b.emas - a.emas;     
-                if(b.perak !== a.perak) return b.perak - a.perak; 
-                return b.gangsa - a.gangsa;                       
-            });
-        };
-
-        const statsArray = Object.values(allPesertaStats);
-        
-        // 3. KEMASKINI SEMUA KAD PEMENANG SERENTAK
-        // (Walaupun tekan satu butang, kita update semua supaya data sentiasa latest)
-
-        // A. Olahragawan 12T (L12)
-        const winnerL12 = sortWinners(statsArray.filter(p => p.kategori === 'L12'))[0];
-        updateWinnerCard('winner-L12', 'stats-L12', winnerL12);
-
-        // B. Olahragawati 12T (P12)
-        const winnerP12 = sortWinners(statsArray.filter(p => p.kategori === 'P12'))[0];
-        updateWinnerCard('winner-P12', 'stats-P12', winnerP12);
-
-        // C. Olahragawan Harapan (L9 & L10)
-        const winnerHarapanL = sortWinners(statsArray.filter(p => ['L9','L10'].includes(p.kategori)))[0];
-        updateWinnerCard('winner-harapan-L', 'stats-harapan-L', winnerHarapanL);
-
-        // D. Olahragawati Harapan (P9 & P10)
-        const winnerHarapanP = sortWinners(statsArray.filter(p => ['P9','P10'].includes(p.kategori)))[0];
-        updateWinnerCard('winner-harapan-P', 'stats-harapan-P', winnerHarapanP);
-
-        // 4. Update Jadual Top 20 (Jika wujud)
-        const allSorted = sortWinners(statsArray).slice(0, 20);
-        const tbody = document.querySelector('#table-ranking-full tbody');
-        
-        if(tbody) {
-            if(allSorted.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="8" class="text-center py-3 text-muted">Tiada data.</td></tr>`;
-            } else {
-                tbody.innerHTML = allSorted.map((p, i) => `
-                    <tr>
-                        <td>${i+1}</td>
-                        <td class="fw-bold text-uppercase">${p.nama}</td>
-                        <td><span class="badge bg-secondary">${p.kategori}</span></td>
-                        <td class="text-uppercase fw-bold text-${p.rumah==='kuning'?'warning':p.rumah}">${p.rumah}</td>
-                        <td class="text-center fw-bold bg-danger bg-opacity-10 text-danger">${p.rekod > 0 ? p.rekod : '-'}</td>
-                        <td class="text-center text-warning fw-bold fs-5">${p.emas}</td>
-                        <td class="text-center fw-bold text-secondary fs-5">${p.perak}</td>
-                        <td class="text-center fw-bold fs-5" style="color:#cd7f32">${p.gangsa}</td>
-                    </tr>
-                `).join('');
-            }
-        }
-
-        alert("Statistik berjaya dikemaskini!");
-
-    } catch(e) {
-        console.error("Ralat Pengiraan:", e);
-        alert("Ralat: " + e.message);
-    } finally {
-        clickedBtn.disabled = false; 
-        clickedBtn.innerHTML = originalText;
-    }
-}
-
-// ==============================================================================
-// BAHAGIAN O: FUNGSI HELPER UI
-// ==============================================================================
-
-function updateWinnerCard(idTitle, idStats, data) {
+async function kiraStatistikPemenang(kategori, idTitle, idStats) {
     const elTitle = document.getElementById(idTitle);
     const elStats = document.getElementById(idStats);
 
-    if(!elTitle || !elStats) return;
+    // Reset UI sementara mengira
+    if(elTitle) elTitle.innerHTML = `<div class="spinner-border spinner-border-sm text-primary"></div> <span class="small">Mengira...</span>`;
 
-    if(data) {
-        // Jika ada pemenang
-        elTitle.innerHTML = `
-            <h4 class="mb-0 fw-bold text-primary">${data.nama}</h4>
-            <div class="text-uppercase text-muted fw-bold small mt-1">${data.rumah}</div>
-        `;
-        elStats.innerHTML = `
-            <div class="d-flex justify-content-center gap-2 mt-3">
-                <span class="badge bg-danger rounded-pill px-3 py-2 border border-white shadow-sm">Rekod: ${data.rekod}</span>
-                <span class="badge bg-warning text-dark rounded-pill px-3 py-2 border border-white shadow-sm">Emas: ${data.emas}</span>
-            </div>
-            <div class="d-flex justify-content-center gap-2 mt-2">
-                <span class="badge bg-secondary rounded-pill px-2">Perak: ${data.perak}</span>
-                <span class="badge rounded-pill px-2" style="background:#cd7f32">Gangsa: ${data.gangsa}</span>
-            </div>
-        `;
-    } else {
-        // Jika tiada data
-        elTitle.innerHTML = `<h5 class="mb-0 text-muted fst-italic">Tiada Calon</h5>`;
-        elStats.innerHTML = `<small class="text-muted">Belum ada pingat dimenangi.</small>`;
+    let stats = {}; // { NamaPeserta: { emas:0, perak:0, gangsa:0, rekod:0, rumah: '...', nama: '...' } }
+
+    try {
+        // 1. Dapatkan semua acara yang telah selesai (Official)
+        const q = query(collection(db, "kejohanan", tahunAktif, "acara"), where("status", "==", "Selesai"));
+        const snapshot = await getDocs(q);
+
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            const results = data.keputusan || []; // Array pemenang [ {nama, pingat, catatan, ...}, ... ]
+
+            results.forEach(p => {
+                // Pastikan kategori peserta sepadan dengan kategori yang kita cari (Contoh: L1 vs L2)
+                // Jika kategori = 'ALL', kita ambil semua. Jika spesifik, kita filter.
+                // Nota: Untuk Harapan, kita mungkin gabungkan L2 & L3.
+                
+                let isMatch = false;
+                if (kategori === 'L1' || kategori === 'P1') {
+                    // Olahragawan/ti (Terbuka/Kelas 1)
+                    if (data.kategori === kategori) isMatch = true;
+                } else if (kategori === 'HarapanL') {
+                    // Harapan Lelaki (Kelas 2 & 3 & 4)
+                    if (['L2', 'L3', 'L4', 'L5'].includes(data.kategori)) isMatch = true;
+                } else if (kategori === 'HarapanP') {
+                    // Harapan Perempuan (Kelas 2 & 3 & 4)
+                    if (['P2', 'P3', 'P4', 'P5'].includes(data.kategori)) isMatch = true;
+                }
+
+                if (isMatch) {
+                    const namaKey = p.nama.trim(); // Gunakan Nama sebagai ID unik (atau ID peserta jika ada)
+
+                    if (!stats[namaKey]) {
+                        stats[namaKey] = { 
+                            nama: p.nama, 
+                            rumah: p.rumah || "-", 
+                            emas: 0, 
+                            perak: 0, 
+                            gangsa: 0, 
+                            rekod: 0,
+                            kategori: data.kategori // Simpan kategori untuk rujukan
+                        };
+                    }
+
+                    // Tambah Pingat
+                    if (p.pingat === "Emas") stats[namaKey].emas++;
+                    if (p.pingat === "Perak") stats[namaKey].perak++;
+                    if (p.pingat === "Gangsa") stats[namaKey].gangsa++;
+
+                    // --- LOGIK PENGESANAN REKOD (PENTING!) ---
+                    // Kita cari keyword "RB", "RK", "RS", atau "Rekod" dalam catatan
+                    const catatanStr = (p.catatan || "").toUpperCase();
+                    if (catatanStr.includes("RB") || 
+                        catatanStr.includes("RK") || 
+                        catatanStr.includes("RS") || 
+                        catatanStr.includes("REKOD")) {
+                        
+                        // Hanya Pemenang Emas yang selalunya dikira pecah rekod untuk statistik
+                        if(p.pingat === "Emas") {
+                             stats[namaKey].rekod++;
+                        }
+                    }
+                }
+            });
+        });
+
+        // 2. Tukar object ke array untuk sorting
+        let candidates = Object.values(stats);
+
+        // 3. LOGIK PENYUSUNAN (HIERAKI PENENTUAN)
+        candidates.sort((a, b) => {
+            // Kriteria 1: Jumlah Rekod (Paling banyak rekod di atas)
+            if (b.rekod !== a.rekod) {
+                return b.rekod - a.rekod;
+            }
+            // Kriteria 2: Jumlah Emas
+            if (b.emas !== a.emas) {
+                return b.emas - a.emas;
+            }
+            // Kriteria 3: Jumlah Perak
+            if (b.perak !== a.perak) {
+                return b.perak - a.perak;
+            }
+            // Kriteria 4: Jumlah Gangsa
+            return b.gangsa - a.gangsa;
+        });
+
+        // 4. Paparkan Pemenang (Juara adalah index 0)
+        const winner = candidates.length > 0 ? candidates[0] : null;
+        
+        // Panggil fungsi UI Helper (Pastikan fungsi updateWinnerCard ada di bawah fail)
+        updateWinnerCard(idTitle, idStats, winner);
+
+    } catch (error) {
+        console.error("Ralat Pengiraan:", error);
+        if(elTitle) elTitle.innerHTML = `<span class="text-danger small">Ralat Sistem</span>`;
     }
 }
 // End of File
+
 
 
 
