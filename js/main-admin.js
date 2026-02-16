@@ -2,13 +2,23 @@
  * ==============================================================================
  * SISTEM PENGURUSAN KEJOHANAN OLAHRAGA TAHUNAN (KOT)
  * FAIL: main-admin.js
- * VERSI: ULTIMATE (Lengkap dengan Olahragawan & Fix UI)
+ * VERSI: 3.0 (FULL EXTENDED)
+ * PENERANGAN:
+ * Fail ini menguruskan segala logik di bahagian Admin termasuk:
+ * 1. Setup & Init Database
+ * 2. Pengurusan Rumah Sukan
+ * 3. Paparan Senarai Acara & Saringan
+ * 4. Input Keputusan (Balapan, Padang, Lompat Tinggi)
+ * 5. Utiliti Data (Backup, Restore, CSV, Padam)
+ * 6. (BARU) Penentuan Olahragawan & Statistik Pingat
  * ==============================================================================
  */
 
 // ==============================================================================
-// 1. IMPORT MODUL & FIREBASE
+// BAHAGIAN A: IMPORT MODUL DAN LIBRARY
 // ==============================================================================
+
+// Import fungsi dari modul admin tempatan
 import { 
     initializeTournament, 
     getHeatsData, 
@@ -17,298 +27,692 @@ import {
     generateHeats
 } from './modules/admin.js';
 
+// Import konfigurasi Firebase
 import { db } from './firebase-config.js';
 
+// Import fungsi Firestore dari CDN (Versi 11.1.0)
 import { 
-    doc, getDoc, updateDoc, setDoc, collection, getDocs, writeBatch, deleteDoc, query, where 
+    doc, 
+    getDoc, 
+    updateDoc, 
+    setDoc, 
+    collection, 
+    getDocs, 
+    writeBatch, 
+    deleteDoc, 
+    query, 
+    where 
 } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
 
 // ==============================================================================
-// 2. PEMBOLEHUBAH GLOBAL
+// BAHAGIAN B: PEMBOLEHUBAH GLOBAL (STATE MANAGEMENT)
 // ==============================================================================
+
+// Tahun aktif kejohanan (default kepada tahun semasa jika tiada dalam session)
 let tahunAktif = sessionStorage.getItem("tahun_aktif") || new Date().getFullYear().toString(); 
 const contentArea = document.getElementById('content-area');
 
-// State Management (Untuk simpan data sementara semasa edit)
-window.currentHeatData = null;
-window.currentHeatId = null;
-window.currentEventId = null;
-window.currentLabel = null;
-window.currentMode = 'input'; 
-window.currentRecordData = null; // Menyimpan info rekod kejohanan semasa
+// Variable untuk menyimpan data sementara (State)
+// Ini penting untuk memastikan data tidak hilang semasa proses edit
+window.currentHeatData = null;      // Data saringan semasa
+window.currentHeatId = null;        // ID Saringan
+window.currentEventId = null;       // ID Acara induk
+window.currentLabel = null;         // Nama acara (tajuk)
+window.currentMode = 'input';       // Mod paparan (input/view)
+window.currentRecordData = null;    // Data rekod kejohanan (untuk perbandingan)
 
 // ==============================================================================
-// 3. INIT & NAVIGASI UTAMA
+// BAHAGIAN C: INITIALIZATION & NAVIGATION
 // ==============================================================================
+
+/**
+ * Fungsi ini dijalankan sebaik sahaja halaman dimuatkan (DOM Ready).
+ * Ia menyediakan UI asas dan menu navigasi.
+ */
 document.addEventListener('DOMContentLoaded', async () => {
-    console.log("Admin System Init. Tahun:", tahunAktif);
+    console.log("============================================");
+    console.log(" SISTEM ADMIN DIMUATKAN ");
+    console.log(" Tahun Kejohanan: " + tahunAktif);
+    console.log("============================================");
 
-    // Kemaskini Label Tahun
+    // 1. Kemaskini Label Tahun di Sidebar
     const labelTahun = document.getElementById('tahun-label');
-    if(labelTahun) labelTahun.innerText = `Tahun: ${tahunAktif}`;
-
-    // Sembunyikan view Olahragawan by default
-    toggleView('main');
-});
-
-// Helper: Tukar View antara Content Area (Asal) dan View Olahragawan (Baru)
-function toggleView(viewName) {
-    const mainContent = document.getElementById('content-area');
-    const olahragawanView = document.getElementById('view-olahragawan');
-    
-    if (viewName === 'olahragawan') {
-        mainContent.classList.add('d-none');
-        olahragawanView.classList.remove('d-none');
-    } else {
-        mainContent.classList.remove('d-none');
-        olahragawanView.classList.add('d-none');
+    if(labelTahun) {
+        labelTahun.innerText = `Tahun Operasi: ${tahunAktif}`;
     }
-}
 
-// --- EVENT LISTENERS MENU SIDEBAR ---
+    // 2. Setup Default View
+    // Pastikan view olahragawan disembunyikan pada permulaan
+    const viewOlahragawan = document.getElementById('view-olahragawan');
+    if(viewOlahragawan) viewOlahragawan.classList.add('d-none');
+    
+    const contentAreaDiv = document.getElementById('content-area');
+    if(contentAreaDiv) contentAreaDiv.classList.remove('d-none');
+});
 
-// Menu Setup
+// --- PENGURUSAN KLIK MENU SIDEBAR ---
+
+// 1. Menu Setup & Database
 document.getElementById('menu-setup')?.addEventListener('click', () => {
-    toggleView('main');
-    renderSetupForm();
+    console.log("Navigasi: Menu Setup diklik.");
+    toggleView('main'); // Tunjuk content area biasa
+    renderSetupForm();  // Papar borang setup
 });
 
-// Menu Keputusan Acara
+// 2. Menu Keputusan Acara
 document.getElementById('menu-acara')?.addEventListener('click', () => {
-    toggleView('main');
-    renderSenaraiAcara('input');
+    console.log("Navigasi: Menu Acara diklik.");
+    toggleView('main'); // Tunjuk content area biasa
+    renderSenaraiAcara('input'); // Papar senarai acara
 });
 
-// Menu Olahragawan (BARU)
+// 3. Menu Olahragawan (CIRI BARU)
 document.getElementById('menu-olahragawan')?.addEventListener('click', () => {
-    toggleView('olahragawan');
-    // Kita tidak auto-kira, tunggu user tekan butang
+    console.log("Navigasi: Menu Olahragawan diklik.");
+    toggleView('olahragawan'); // Tukar ke paparan dashboard olahragawan
 });
 
-// Log Keluar
+// 4. Butang Log Keluar
 document.getElementById('btn-logout')?.addEventListener('click', () => {
-    if(confirm("Log keluar dari sistem?")) {
+    if(confirm("Adakah anda pasti mahu log keluar dari sistem Admin?")) {
         sessionStorage.clear();
         window.location.href = 'login.html';
     }
 });
 
+/**
+ * Fungsi Helper: Menukar paparan antara Content Utama dan View Olahragawan
+ * @param {string} viewName - 'main' atau 'olahragawan'
+ */
+function toggleView(viewName) {
+    const mainContent = document.getElementById('content-area');
+    const olahragawanView = document.getElementById('view-olahragawan');
+    
+    if (viewName === 'olahragawan') {
+        // Sembunyikan Main, Tunjuk Olahragawan
+        if(mainContent) mainContent.classList.add('d-none');
+        if(olahragawanView) olahragawanView.classList.remove('d-none');
+    } else {
+        // Sembunyikan Olahragawan, Tunjuk Main
+        if(mainContent) mainContent.classList.remove('d-none');
+        if(olahragawanView) olahragawanView.classList.add('d-none');
+    }
+}
+
 // ==============================================================================
-// 4. FUNGSI SETUP, UTILITI & RUMAH SUKAN (Fungsi Asal Kekal)
+// BAHAGIAN D: SETUP, UTILITI & RUMAH SUKAN
 // ==============================================================================
+
+/**
+ * Memaparkan borang Setup, Backup, dan Restore.
+ * Ini adalah pusat kawalan data sistem.
+ */
 function renderSetupForm() {
-    contentArea.innerHTML = `
+    // Bina HTML untuk papan pemuka setup
+    let html = `
         <div class="row g-4">
             <div class="col-md-6">
                 <div class="card p-4 h-100 shadow-sm border-0">
-                    <h5 class="text-primary"><i class="bi bi-database me-2"></i>Setup Database</h5>
-                    <p class="text-muted small">Jana struktur awal untuk tahun ${tahunAktif}.</p>
-                    <button class="btn btn-primary mt-auto" id="btn-init">Jana Struktur</button>
+                    <h5 class="text-primary fw-bold"><i class="bi bi-database me-2"></i>Setup Database</h5>
+                    <p class="text-muted small">
+                        Gunakan fungsi ini untuk menjana struktur awal pangkalan data bagi tahun ${tahunAktif}.
+                        <br>Ia akan mencipta koleksi acara, rumah sukan, dan peserta jika belum wujud.
+                    </p>
+                    <button class="btn btn-primary mt-auto w-100" id="btn-init">
+                        <i class="bi bi-play-circle me-2"></i>Jana Struktur Database
+                    </button>
                 </div>
             </div>
+
             <div class="col-md-6">
                 <div class="card p-4 h-100 shadow-sm border-0">
-                    <h5 class="text-success"><i class="bi bi-shield-lock me-2"></i>Rumah Sukan</h5>
-                    <p class="text-muted small">Urus kata laluan rumah sukan.</p>
-                    <button class="btn btn-success mt-auto" onclick="renderSenaraiRumah()">Urus Kata Laluan</button>
+                    <h5 class="text-success fw-bold"><i class="bi bi-shield-lock me-2"></i>Rumah Sukan</h5>
+                    <p class="text-muted small">
+                        Tetapkan kata laluan untuk setiap Rumah Sukan.
+                        <br>Guru Rumah perlu menggunakan kata laluan ini untuk mendaftar peserta.
+                    </p>
+                    <button class="btn btn-success mt-auto w-100" onclick="renderSenaraiRumah()">
+                        <i class="bi bi-key me-2"></i>Urus Kata Laluan
+                    </button>
                 </div>
             </div>
+
             <div class="col-md-12">
                 <div class="card p-4 shadow-sm border-0">
-                    <h5 class="text-dark mb-3"><i class="bi bi-hdd-network me-2"></i>Utiliti Data</h5>
+                    <h5 class="text-dark mb-3 fw-bold"><i class="bi bi-hdd-network me-2"></i>Utiliti & Penyelenggaraan Data</h5>
+                    <div class="alert alert-warning small">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        Sila berhati-hati. Pastikan anda membuat Backup sebelum melakukan Padam Data atau Restore.
+                    </div>
                     <div class="d-flex gap-2 flex-wrap">
-                        <button class="btn btn-outline-dark" id="btn-laksana-backup"><i class="bi bi-download me-2"></i>Backup JSON</button>
-                        <button class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#modalPadam"><i class="bi bi-trash me-2"></i>Padam Data</button>
+                        <button class="btn btn-outline-dark" id="btn-laksana-backup">
+                            <i class="bi bi-download me-2"></i>Muat Turun Backup (JSON)
+                        </button>
+                        
+                        <button class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#modalPadam">
+                            <i class="bi bi-trash me-2"></i>Zon Bahaya: Padam Data
+                        </button>
+                    </div>
+
+                    <hr>
+                    <div class="mt-3">
+                        <label class="form-label small fw-bold">Restore Data (Upload JSON Backup):</label>
+                        <div class="input-group">
+                            <input type="file" class="form-control" id="file-restore" accept=".json">
+                            <button class="btn btn-secondary" id="btn-laksana-restore">Restore</button>
+                        </div>
+                    </div>
+                    
+                    <hr>
+                    <div class="mt-3">
+                        <label class="form-label small fw-bold">Muat Naik Rekod Kejohanan (CSV):</label>
+                        <div class="input-group">
+                            <input type="file" class="form-control" id="file-csv" accept=".csv">
+                            <button class="btn btn-info text-white" id="btn-proses-csv">Upload CSV</button>
+                        </div>
+                        <small class="text-muted">Format: Rekod, Acara, Kategori, Tahun, Nama</small>
                     </div>
                 </div>
             </div>
         </div>
-        <div id="house-list" class="mt-4"></div>`;
+        
+        <div id="house-list" class="mt-4"></div>
+    `;
 
+    contentArea.innerHTML = html;
+
+    // --- LOGIC BUTANG SETUP ---
     document.getElementById('btn-init').onclick = async () => {
-        if(!confirm("Anda pasti mahu menjana database baru?")) return;
-        const res = await initializeTournament(tahunAktif, []);
-        alert(res.success ? "Berjaya!" : "Ralat: " + res.message);
+        if(!confirm("Adakah anda pasti mahu menjana struktur database baru? Ini mungkin mengambil masa.")) return;
+        
+        const btn = document.getElementById('btn-init');
+        btn.disabled = true;
+        btn.innerHTML = "Sedang Menjana...";
+        
+        try {
+            const res = await initializeTournament(tahunAktif, []);
+            if(res.success) {
+                alert("Berjaya! Struktur pangkalan data telah siap dibina.");
+            } else {
+                alert("Ralat: " + res.message);
+            }
+        } catch(err) {
+            console.error(err);
+            alert("Ralat Sistem: " + err.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-play-circle me-2"></i>Jana Struktur Database';
+        }
     };
 
-    // Backup Listener
+    // --- LOGIC BUTANG BACKUP ---
     document.getElementById('btn-laksana-backup').onclick = async () => {
         const btn = document.getElementById('btn-laksana-backup');
-        btn.disabled = true; btn.innerText = "Processing...";
+        btn.disabled = true; 
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Memproses Backup...';
+        
         try {
-            let data = {};
-            const collections = ["peserta", "rumah", "acara"];
-            for(let col of collections) {
-                data[col] = {};
+            console.log("Memulakan proses backup...");
+            let dataBackup = {};
+            const collectionsToBackup = ["peserta", "rumah", "acara"];
+            
+            // Loop setiap collection dan tarik data
+            for(let col of collectionsToBackup) {
+                dataBackup[col] = {};
                 const snap = await getDocs(collection(db, "kejohanan", tahunAktif, col));
-                snap.forEach(d => data[col][d.id] = d.data());
+                snap.forEach(d => {
+                    dataBackup[col][d.id] = d.data();
+                });
+                console.log(`Backup: Collection ${col} selesai (${snap.size} dokumen).`);
             }
-            const url = URL.createObjectURL(new Blob([JSON.stringify(data)], {type: "application/json"}));
-            const a = document.createElement('a'); a.href=url; a.download=`BACKUP_${tahunAktif}.json`; a.click();
-            alert("Backup Selesai!");
-        } catch(e) { alert("Ralat Backup: "+e.message); }
-        finally { btn.disabled = false; btn.innerText = "Backup JSON"; }
+            
+            // Convert ke JSON String dan download
+            const jsonString = JSON.stringify(dataBackup, null, 2);
+            const blob = new Blob([jsonString], {type: "application/json"});
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a'); 
+            a.href = url; 
+            a.download = `KOT_BACKUP_${tahunAktif}_${new Date().toISOString().slice(0,10)}.json`; 
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            
+            alert("Backup berjaya dimuat turun!");
+
+        } catch(e) { 
+            console.error("Backup Error:", e);
+            alert("Ralat Backup: "+e.message); 
+        } finally { 
+            btn.disabled = false; 
+            btn.innerHTML = '<i class="bi bi-download me-2"></i>Muat Turun Backup (JSON)'; 
+        }
     };
 }
 
-// Fungsi Senarai Rumah
+// --- FUNGSI URUS RUMAH SUKAN ---
 window.renderSenaraiRumah = async () => {
     const container = document.getElementById('house-list');
-    container.innerHTML = 'Loading...';
-    const rumah = ['merah', 'biru', 'hijau', 'kuning'];
-    let html = `<div class="card"><div class="card-header bg-white fw-bold">Senarai Rumah Sukan</div>
-    <div class="table-responsive"><table class="table table-bordered mb-0"><tr><th>Rumah</th><th>Kod Laluan</th><th>Tindakan</th></tr>`;
+    container.innerHTML = '<div class="text-center"><div class="spinner-border text-primary"></div><p>Memuatkan senarai rumah...</p></div>';
     
-    for(let r of rumah) {
-        const snap = await getDoc(doc(db, "kejohanan", tahunAktif, "rumah", r));
-        const kod = snap.exists() ? snap.data().kod || '' : '';
-        html += `<tr><td class="text-uppercase fw-bold text-${r==='kuning'?'warning':r}">${r}</td>
-        <td><input id="kod-${r}" type="text" class="form-control form-control-sm" value="${kod}"></td>
-        <td><button class="btn btn-sm btn-dark" onclick="simpanKodRumah('${r}')">Simpan</button></td></tr>`;
+    try {
+        const rumahColors = ['merah', 'biru', 'hijau', 'kuning'];
+        let html = `
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white fw-bold py-3">Senarai Rumah Sukan & Kod Akses</div>
+            <div class="table-responsive">
+                <table class="table table-bordered mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th width="20%">Rumah Sukan</th>
+                            <th>Kod Akses (Password)</th>
+                            <th width="15%">Tindakan</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+        
+        for(let r of rumahColors) {
+            // Tarik data rumah dari DB
+            const docRef = doc(db, "kejohanan", tahunAktif, "rumah", r);
+            const snap = await getDoc(docRef);
+            const kodSediaAda = snap.exists() ? (snap.data().kod || '') : '';
+            
+            // Tetapkan warna teks ikut rumah
+            let textClass = "";
+            if(r === 'merah') textClass = "text-danger";
+            else if(r === 'biru') textClass = "text-primary";
+            else if(r === 'hijau') textClass = "text-success";
+            else if(r === 'kuning') textClass = "text-warning";
+
+            html += `
+                <tr>
+                    <td class="text-uppercase fw-bold ${textClass}">${r}</td>
+                    <td>
+                        <input id="kod-${r}" type="text" class="form-control" value="${kodSediaAda}" placeholder="Masukkan kod...">
+                    </td>
+                    <td>
+                        <button class="btn btn-dark w-100" onclick="simpanKodRumah('${r}')">
+                            <i class="bi bi-save me-1"></i>Simpan
+                        </button>
+                    </td>
+                </tr>`;
+        }
+        
+        html += `</tbody></table></div></div>`;
+        container.innerHTML = html;
+
+    } catch(err) {
+        console.error(err);
+        container.innerHTML = `<div class="alert alert-danger">Gagal memuatkan rumah sukan.</div>`;
     }
-    container.innerHTML = html + `</table></div></div>`;
 };
 
-window.simpanKodRumah = async (id) => {
-    const val = document.getElementById(`kod-${id}`).value;
-    await setDoc(doc(db, "kejohanan", tahunAktif, "rumah", id), {kod: val, nama: id.toUpperCase()}, {merge: true});
-    alert("Disimpan.");
+window.simpanKodRumah = async (idRumah) => {
+    const inputKod = document.getElementById(`kod-${idRumah}`);
+    if(!inputKod) return;
+    
+    const val = inputKod.value.trim();
+    if(!val) return alert("Sila masukkan kod terlebih dahulu.");
+
+    try {
+        await setDoc(doc(db, "kejohanan", tahunAktif, "rumah", idRumah), {
+            kod: val, 
+            nama: idRumah.toUpperCase(),
+            updatedAt: new Date().toISOString()
+        }, {merge: true});
+        
+        alert(`Kod akses untuk rumah ${idRumah.toUpperCase()} berjaya disimpan.`);
+    } catch(e) {
+        console.error(e);
+        alert("Gagal simpan: " + e.message);
+    }
 };
 
-// Fungsi Padam Data (Global)
+// --- GLOBAL EVENT LISTENERS UNTUK UTILITI (CSV / RESTORE / PADAM) ---
+
+// 1. CSV UPLOAD LISTENER
+document.getElementById('btn-proses-csv')?.addEventListener('click', async () => {
+    const input = document.getElementById('file-csv');
+    if(!input.files[0]) return alert("Sila pilih fail CSV dahulu.");
+    
+    const btn = document.getElementById('btn-proses-csv');
+    btn.disabled = true; btn.innerText = "Processing...";
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        try {
+            const lines = e.target.result.split('\n');
+            let records = [];
+            // Parse CSV baris demi baris
+            for(let i=1; i<lines.length; i++) {
+                const line = lines[i].trim();
+                if(!line) continue;
+                
+                // Format: Rekod, Acara, Kategori, Tahun, Nama
+                const cols = line.split(',');
+                if(cols.length >= 2) {
+                    records.push({
+                        rekod: cols[0]?.trim() || '',
+                        acara: cols[1]?.trim() || '',
+                        kategori: cols[2]?.trim() || '',
+                        tahun: cols[3]?.trim() || '',
+                        nama: cols[4]?.trim() || '-'
+                    });
+                }
+            }
+            
+            if(records.length > 0) {
+                await saveBulkRecords(records);
+                alert(`Berjaya memuat naik ${records.length} rekod kejohanan!`);
+            } else {
+                alert("Tiada rekod sah dijumpai dalam fail CSV.");
+            }
+        } catch(err) { 
+            console.error(err);
+            alert("Ralat CSV: "+err.message); 
+        } finally {
+            btn.disabled = false; btn.innerText = "Upload CSV";
+        }
+    };
+    reader.readAsText(input.files[0]);
+});
+
+// 2. RESTORE DATA LISTENER
+document.getElementById('btn-laksana-restore')?.addEventListener('click', async () => {
+    const input = document.getElementById('file-restore');
+    if(!input.files[0]) return alert("Sila pilih fail JSON dahulu.");
+    if(!confirm("AMARAN: Restore akan menimpa data sedia ada. Teruskan?")) return;
+
+    const btn = document.getElementById('btn-laksana-restore');
+    btn.disabled = true; btn.innerText = "Memulihkan...";
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        try {
+            const data = JSON.parse(e.target.result);
+            let batch = writeBatch(db);
+            let count = 0;
+            let totalRestored = 0;
+
+            // Loop setiap collection dalam backup
+            for(let col in data) {
+                const docs = data[col];
+                for(let id in docs) {
+                    const docRef = doc(db, "kejohanan", tahunAktif, col, id);
+                    batch.set(docRef, docs[id], {merge:true});
+                    count++;
+                    totalRestored++;
+
+                    // Firestore batch limit (500)
+                    if(count >= 400) { 
+                        await batch.commit(); 
+                        batch = writeBatch(db); 
+                        count = 0; 
+                    }
+                }
+            }
+            if(count > 0) await batch.commit();
+            
+            alert(`Restore Selesai! Sebanyak ${totalRestored} dokumen telah dipulihkan.`);
+            location.reload();
+
+        } catch(err) { 
+            console.error(err);
+            alert("Ralat Restore: "+err.message); 
+        } finally {
+            btn.disabled = false; btn.innerText = "Restore";
+        }
+    };
+    reader.readAsText(input.files[0]);
+});
+
+// 3. PADAM DATA LISTENER
 document.getElementById('btn-laksana-padam')?.addEventListener('click', async () => {
     const jenis = document.getElementById('select-padam-jenis').value;
     const sah = document.getElementById('input-pengesahan-padam').value;
-    if(sah !== 'SAH PADAM') return;
-    if(!confirm("AMARAN TERAKHIR: Data akan dipadam kekal. Teruskan?")) return;
     
+    // Validasi Keselamatan
+    if(sah !== 'SAH PADAM') {
+        return alert("Sila taip 'SAH PADAM' dengan tepat untuk meneruskan.");
+    }
+    if(!confirm("AMARAN TERAKHIR: Data yang dipadam TIDAK BOLEH dikembalikan melainkan anda ada backup. Teruskan?")) return;
+    
+    const btn = document.getElementById('btn-laksana-padam');
+    btn.disabled = true; btn.innerText = "Memadam...";
+
     try {
-        const deleteCol = async (path) => {
-            const snap = await getDocs(path);
+        // Fungsi helper untuk padam collection secara batch
+        const deleteCol = async (pathRef) => {
+            const snap = await getDocs(pathRef);
+            if(snap.empty) return;
+
             let batch = writeBatch(db);
             let c = 0;
-            snap.forEach(d => { batch.delete(d.ref); c++; if(c>=400){batch.commit(); batch=writeBatch(db); c=0;} });
-            if(c>0) await batch.commit();
+            snap.forEach(d => { 
+                batch.delete(d.ref); 
+                c++; 
+                if(c >= 400){
+                    batch.commit(); 
+                    batch = writeBatch(db); 
+                    c=0;
+                } 
+            });
+            if(c > 0) await batch.commit();
         };
 
-        if(jenis === 'peserta' || jenis === 'semua') await deleteCol(collection(db, "kejohanan", tahunAktif, "peserta"));
-        if(jenis === 'keputusan' || jenis === 'semua') {
-            const evSnap = await getDocs(collection(db, "kejohanan", tahunAktif, "acara"));
-            for(let ev of evSnap.docs) await deleteCol(collection(db, "kejohanan", tahunAktif, "acara", ev.id, "saringan"));
+        // Logic Padam Mengikut Pilihan
+        if(jenis === 'peserta' || jenis === 'semua') {
+            await deleteCol(collection(db, "kejohanan", tahunAktif, "peserta"));
         }
+        
+        if(jenis === 'keputusan' || jenis === 'semua') {
+            // Padam subcollection saringan dalam setiap acara
+            const evSnap = await getDocs(collection(db, "kejohanan", tahunAktif, "acara"));
+            for(let ev of evSnap.docs) {
+                await deleteCol(collection(db, "kejohanan", tahunAktif, "acara", ev.id, "saringan"));
+            }
+        }
+        
         if(jenis === 'semua') {
             await deleteCol(collection(db, "kejohanan", tahunAktif, "acara"));
             await deleteCol(collection(db, "kejohanan", tahunAktif, "rumah"));
         }
-        alert("Data berjaya dipadam.");
+
+        alert("Operasi Pemadaman Data Berjaya.");
         location.reload();
-    } catch(e) { alert("Ralat Padam: "+e.message); }
+
+    } catch(e) { 
+        console.error(e);
+        alert("Ralat Padam: "+e.message); 
+        btn.disabled = false; btn.innerText = "Padam Sekarang";
+    }
 });
 
 // ==============================================================================
-// 5. SENARAI ACARA
+// BAHAGIAN E: SENARAI ACARA & SARINGAN
 // ==============================================================================
-window.renderSenaraiAcara = async (mode) => {
-    mode = 'input'; // Paksa mode input untuk admin
-    contentArea.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary"></div><p>Memuatkan acara...</p></div>';
+
+/**
+ * Memaparkan senarai acara yang ada dalam database.
+ * Diasingkan mengikut kategori Balapan dan Padang.
+ */
+window.renderSenaraiAcara = async (mode = 'input') => {
+    // Kita paksa 'input' mode untuk admin panel supaya boleh klik & edit
+    const internalMode = 'input'; 
+    contentArea.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary"></div><p class="mt-2">Sedang memuatkan senarai acara...</p></div>';
 
     try {
         let events = [];
+        // Ambil semua acara
         const snap = await getDocs(collection(db, "kejohanan", tahunAktif, "acara"));
         snap.forEach(d => events.push({id: d.id, ...d.data()}));
 
+        // Sort ikut nama
+        events.sort((a,b) => a.nama.localeCompare(b.nama));
+
+        // Filter Kategori
         const track = events.filter(e => e.kategori === 'balapan');
         const field = events.filter(e => e.kategori === 'padang');
 
-        const card = (ev) => `
-        <div class="col-md-4 mb-3">
-            <div class="card h-100 shadow-sm border-0 hover-effect" onclick="pilihAcara('${ev.id}', '${ev.nama}', '${mode}')" style="cursor:pointer">
-                <div class="card-body">
-                    <span class="badge bg-${ev.status==='selesai'?'success':'secondary'} float-end">${ev.status||'Baru'}</span>
-                    <h6 class="fw-bold text-primary">${ev.nama}</h6>
-                    <small class="text-muted">${ev.kelas} | ${ev.jenis||'Akhir'}</small>
+        // Fungsi Helper untuk buat Kad HTML
+        const renderCard = (ev) => {
+            const statusClass = ev.status === 'selesai' ? 'success' : 'secondary';
+            const statusLabel = ev.status === 'selesai' ? 'Selesai' : 'Baru';
+            
+            return `
+            <div class="col-md-4 mb-3">
+                <div class="card h-100 shadow-sm border-0 hover-effect" onclick="pilihAcara('${ev.id}', '${ev.nama}', '${internalMode}')" style="cursor:pointer; transition: transform 0.2s;">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between mb-2">
+                            <span class="badge bg-primary">${ev.kelas || 'Terbuka'}</span>
+                            <span class="badge bg-${statusClass}">${statusLabel}</span>
+                        </div>
+                        <h6 class="fw-bold text-dark mb-1">${ev.nama}</h6>
+                        <small class="text-muted">${ev.jenis || 'Akhir'}</small>
+                    </div>
+                    <div class="card-footer bg-light border-0 py-2 small text-primary fw-bold text-end">
+                        Urus Keputusan <i class="bi bi-arrow-right ms-1"></i>
+                    </div>
                 </div>
-            </div>
-        </div>`;
+            </div>`;
+        };
 
-        let html = `<h4 class="mb-3 border-bottom pb-2">Senarai Acara</h4>`;
-        html += `<h5 class="text-success mt-3">Padang</h5><div class="row">${field.map(card).join('')||'<p>Tiada data</p>'}</div>`;
-        html += `<h5 class="text-danger mt-4">Balapan</h5><div class="row">${track.map(card).join('')||'<p>Tiada data</p>'}</div>`;
+        let html = `<h4 class="mb-3 border-bottom pb-2">Pengurusan Keputusan Acara</h4>`;
+        
+        // Render Padang
+        html += `<div class="mb-4">
+                    <h5 class="text-success fw-bold"><i class="bi bi-flower1 me-2"></i>Acara Padang</h5>
+                    <div class="row">${field.length > 0 ? field.map(renderCard).join('') : '<div class="col-12"><div class="alert alert-light">Tiada acara padang dijumpai.</div></div>'}</div>
+                 </div>`;
+        
+        // Render Balapan
+        html += `<div class="mb-4">
+                    <h5 class="text-danger fw-bold"><i class="bi bi-stopwatch me-2"></i>Acara Balapan</h5>
+                    <div class="row">${track.length > 0 ? track.map(renderCard).join('') : '<div class="col-12"><div class="alert alert-light">Tiada acara balapan dijumpai.</div></div>'}</div>
+                 </div>`;
+
         contentArea.innerHTML = html;
 
-    } catch(e) { contentArea.innerHTML = `<div class="alert alert-danger">Ralat: ${e.message}</div>`; }
+    } catch(e) { 
+        console.error(e);
+        contentArea.innerHTML = `<div class="alert alert-danger shadow-sm">Ralat Memuatkan Acara: ${e.message}</div>`; 
+    }
 };
 
-// ==============================================================================
-// 6. PILIH SARINGAN
-// ==============================================================================
+/**
+ * Memaparkan senarai saringan (Heats) bagi acara yang dipilih.
+ */
 window.pilihAcara = async (eventId, label, mode) => {
-    contentArea.innerHTML = 'Loading...';
+    contentArea.innerHTML = '<div class="text-center py-5"><div class="spinner-border"></div><p>Memuatkan saringan...</p></div>';
     try {
         const heats = await getHeatsData(tahunAktif, eventId);
+        
         let html = `
-            <button class="btn btn-sm btn-light border mb-3" onclick="renderSenaraiAcara('${mode}')"><i class="bi bi-arrow-left"></i> Kembali</button>
-            <h4 class="text-primary mb-3">${label}</h4>
+            <button class="btn btn-sm btn-outline-secondary mb-3" onclick="renderSenaraiAcara('${mode}')">
+                <i class="bi bi-arrow-left me-1"></i> Kembali ke Senarai Acara
+            </button>
+            <h4 class="text-primary fw-bold mb-3 border-bottom pb-2">${label}</h4>
         `;
 
         if (heats.length === 0) {
-            html += `<div class="alert alert-warning">Tiada saringan. <button id="btn-jana" class="btn btn-dark btn-sm ms-2">Jana Saringan</button></div>`;
+            html += `
+            <div class="alert alert-warning text-center p-5">
+                <h4><i class="bi bi-exclamation-circle"></i></h4>
+                <p>Tiada saringan dijumpai untuk acara ini.</p>
+                <button id="btn-jana" class="btn btn-dark mt-2">
+                    <i class="bi bi-magic me-2"></i>Jana Saringan Automatik
+                </button>
+            </div>`;
         } else {
-            html += `<div class="list-group">`;
-            heats.sort((a,b)=>parseInt(a.noSaringan)-parseInt(b.noSaringan));
+            html += `<p class="text-muted mb-3">Sila pilih saringan untuk memasukkan keputusan:</p>`;
+            html += `<div class="list-group shadow-sm">`;
+            
+            // Sort saringan mengikut nombor
+            heats.sort((a,b) => parseInt(a.noSaringan) - parseInt(b.noSaringan));
+            
             heats.forEach(h => {
+                const badgeColor = h.status === 'selesai' ? 'success' : 'warning';
+                const badgeText = h.status === 'selesai' ? 'SELESAI' : 'MENUNGGU KEPUTUSAN';
+                const labelSaringan = h.jenis === 'akhir' ? 'PERINGKAT AKHIR' : `SARINGAN ${h.noSaringan}`;
+                
                 html += `
-                <button class="list-group-item list-group-item-action d-flex justify-content-between p-3" 
+                <button class="list-group-item list-group-item-action d-flex justify-content-between align-items-center p-3 mb-2 border rounded" 
                     onclick="pilihSaringan('${eventId}', '${h.id}', '${label}', '${mode}')">
-                    <span class="fw-bold">${h.jenis==='akhir'?'ACARA AKHIR':`Saringan ${h.noSaringan}`} (${h.peserta?.length||0} Peserta)</span>
-                    <span class="badge bg-${h.status==='selesai'?'success':'warning'}">${h.status==='selesai'?'Selesai':'Input'}</span>
+                    
+                    <div>
+                        <span class="fw-bold fs-5 text-dark">${labelSaringan}</span>
+                        <div class="small text-muted"><i class="bi bi-people me-1"></i> ${h.peserta?.length||0} Peserta Berdaftar</div>
+                    </div>
+                    
+                    <span class="badge bg-${badgeColor} rounded-pill px-3 py-2">${badgeText}</span>
                 </button>`;
             });
             html += `</div>`;
         }
         contentArea.innerHTML = html;
 
+        // Logic Butang Jana Saringan (Jika tiada saringan)
         const btnJana = document.getElementById('btn-jana');
         if(btnJana) {
             btnJana.onclick = async () => {
-                btnJana.innerText = "Memproses...";
-                await generateHeats(tahunAktif, eventId);
-                pilihAcara(eventId, label, mode);
+                if(!confirm("Adakah anda pasti mahu menjana saringan secara automatik?")) return;
+                
+                btnJana.disabled = true;
+                btnJana.innerText = "Sedang Memproses...";
+                try {
+                    await generateHeats(tahunAktif, eventId);
+                    alert("Saringan berjaya dijana!");
+                    // Refresh paparan
+                    pilihAcara(eventId, label, mode);
+                } catch(err) {
+                    alert("Gagal jana saringan: " + err.message);
+                    btnJana.disabled = false;
+                }
             };
         }
-    } catch(e) { contentArea.innerHTML = "Ralat: " + e.message; }
+    } catch(e) { 
+        console.error(e);
+        contentArea.innerHTML = `<div class="alert alert-danger">Ralat: ${e.message}</div>`; 
+    }
 };
 
 // ==============================================================================
-// 7. PAPARAN BORANG INPUT (DIPERBAIKI DENGAN REKOD & UI)
+// BAHAGIAN F: PAPARAN BORANG INPUT (BORANG UTAMA)
 // ==============================================================================
+
+/**
+ * Memaparkan borang input keputusan.
+ * Fungsi ini mengesan jenis acara (Balapan/Padang/Lompat Tinggi) dan memilih
+ * layout jadual yang sesuai.
+ */
 window.pilihSaringan = async (eventId, heatId, label, mode) => {
-    contentArea.innerHTML = '<div class="text-center py-5"><div class="spinner-border"></div></div>';
+    contentArea.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-success"></div><p>Membuka borang keputusan...</p></div>';
     
     try {
         const isEditMode = (mode === 'input');
         
-        // 1. Dapatkan Data Saringan
+        // 1. Dapatkan Data Saringan dari DB
         const snap = await getDoc(doc(db, "kejohanan", tahunAktif, "acara", eventId, "saringan", heatId));
-        if(!snap.exists()) return contentArea.innerHTML = "Data saringan hilang.";
+        if(!snap.exists()) {
+            contentArea.innerHTML = `<div class="alert alert-danger">Data saringan tidak dijumpai dalam database.</div>`;
+            return;
+        }
         const data = snap.data();
 
-        // 2. Dapatkan Rekod Kejohanan (Logic Baru)
+        // 2. Dapatkan Info Rekod Kejohanan (Ciri Baru)
         let recordText = "Tiada Rekod";
         window.currentRecordData = null; // Reset
         try {
-            // Cari dokumen acara induk untuk dapatkan info kategori/kelas
             const eventDoc = await getDoc(doc(db, "kejohanan", tahunAktif, "acara", eventId));
             if(eventDoc.exists()) {
                 const eData = eventDoc.data();
-                // Cari dalam koleksi 'rekod' jika wujud (anda mungkin perlu setup collection ini)
-                // ATAU gunakan field 'rekodSemasa' jika disimpan dalam event
                 if(eData.rekodSemasa) {
-                    window.currentRecordData = eData.rekodSemasa; // { pemegang: 'Ali', tahun: '2023', catatan: '10.5' }
-                    recordText = `${eData.rekodSemasa.catatan}s - ${eData.rekodSemasa.pemegang} (${eData.rekodSemasa.tahun})`;
+                    // Simpan data rekod untuk logic comparison nanti
+                    window.currentRecordData = eData.rekodSemasa; 
+                    recordText = `<strong>${eData.rekodSemasa.catatan}</strong> (${eData.rekodSemasa.pemegang}, ${eData.rekodSemasa.tahun})`;
                 }
             }
-        } catch(err) { console.log("Rekod fetch error", err); }
+        } catch(err) { console.warn("Gagal tarik info rekod:", err); }
 
         // 3. Simpan State Global
         window.currentHeatData = data;
@@ -317,413 +721,664 @@ window.pilihSaringan = async (eventId, heatId, label, mode) => {
         window.currentLabel = label;
         window.currentMode = mode;
 
-        // 4. Detect Jenis Acara
+        // 4. Pengesanan Jenis Acara
         const nama = label.toUpperCase();
+        // Adakah ia Lompat Tinggi?
         const isHighJump = nama.includes("LOMPAT TINGGI");
+        // Adakah ia acara Padang lain? (Lompat Jauh, Lontar Peluru, dll)
         const isField = (nama.includes("LOMPAT") || nama.includes("LONTAR") || nama.includes("REJAM") || nama.includes("LEMPAR")) && !isHighJump;
 
-        // 5. Render Header Borang (Dengan Paparan Rekod)
+        // 5. Render Header Borang
         let html = `
-            <div class="d-flex justify-content-between mb-3 d-print-none">
-                <button class="btn btn-sm btn-secondary" onclick="pilihAcara('${eventId}', '${label}', '${mode}')">Kembali</button>
-                <div>
-                    ${!data.peserta?.length ? `<button class="btn btn-sm btn-warning me-2" onclick="agihLorongAuto('${eventId}','${heatId}','${label}','${mode}')">Tarik Peserta</button>` : ''}
-                    <button class="btn btn-sm btn-success" onclick="window.print()">Cetak Borang</button>
+            <div class="d-flex justify-content-between mb-4 d-print-none">
+                <button class="btn btn-sm btn-outline-secondary" onclick="pilihAcara('${eventId}', '${label}', '${mode}')">
+                    <i class="bi bi-chevron-left"></i> Kembali
+                </button>
+                <div class="d-flex gap-2">
+                    ${!data.peserta?.length ? `<button class="btn btn-sm btn-warning fw-bold text-dark" onclick="agihLorongAuto('${eventId}','${heatId}','${label}','${mode}')"><i class="bi bi-shuffle me-1"></i>Tarik Peserta Auto</button>` : ''}
+                    <button class="btn btn-sm btn-success fw-bold" onclick="window.print()">
+                        <i class="bi bi-printer me-1"></i>Cetak Borang
+                    </button>
                 </div>
             </div>
             
             <div class="text-center mb-4 border-bottom pb-3">
-                <h3 class="fw-bold text-uppercase m-0">${label}</h3>
-                <div class="d-flex justify-content-center gap-3 mt-2">
-                    <span class="badge bg-dark fs-6">${data.jenis==='akhir'?'AKHIR':`SARINGAN ${data.noSaringan}`}</span>
-                    <span class="badge bg-info text-dark fs-6"><i class="bi bi-trophy me-1"></i>Rekod: ${recordText}</span>
+                <h3 class="fw-bold text-uppercase m-0 font-monospace">${label}</h3>
+                <div class="d-flex justify-content-center gap-3 mt-2 align-items-center">
+                    <span class="badge bg-dark fs-6 rounded-pill px-3">${data.jenis==='akhir'?'PERINGKAT AKHIR':`SARINGAN ${data.noSaringan}`}</span>
+                    <div class="bg-light px-3 py-1 rounded border small text-muted">
+                        <i class="bi bi-trophy-fill text-warning me-1"></i>Rekod Kejohanan: ${recordText}
+                    </div>
                 </div>
-                <div id="new-record-alert" class="alert alert-warning mt-2 d-none fw-bold animate__animated animate__flash">
-                    <i class="bi bi-star-fill me-2"></i>REKOD BARU KEJOHANAN DIKESAN!
+                
+                <div id="new-record-alert" class="alert alert-warning mt-3 d-none fw-bold animate__animated animate__flash shadow-sm border-warning text-dark">
+                    <h5 class="mb-0"><i class="bi bi-star-fill text-danger me-2"></i>TAHNIAH! REKOD BARU KEJOHANAN DIKESAN!</h5>
                 </div>
             </div>
         `;
 
-        // 6. Render Body Mengikut Jenis
-        if(isHighJump) html += renderBorangLompatTinggi(data, !isEditMode);
-        else if(isField) html += renderBorangPadang(data, !isEditMode);
-        else html += renderBorangBalapan(data, !isEditMode);
+        // 6. Pilih Template Table yang sesuai
+        if(isHighJump) {
+            html += renderBorangLompatTinggi(data, !isEditMode);
+        } else if(isField) {
+            html += renderBorangPadang(data, !isEditMode);
+        } else {
+            html += renderBorangBalapan(data, !isEditMode);
+        }
 
         contentArea.innerHTML = html;
 
-    } catch(e) { contentArea.innerHTML = "Ralat Borang: " + e.message; }
+    } catch(e) { 
+        console.error(e);
+        contentArea.innerHTML = `<div class="alert alert-danger">Ralat Membuka Borang: ${e.message}</div>`; 
+    }
 };
 
-// --- HELPER RENDERING (DIPERBAIKI) ---
-
-// A. BALAPAN
+// --- FUNGSI RENDER: TABLE BALAPAN (TRACK) ---
 function renderBorangBalapan(h, readOnly) {
-    let t = `<table class="table table-bordered text-center align-middle mb-0"><thead class="table-dark"><tr><th>Lorong</th><th>Nama</th><th>Masa</th><th>Rank</th></tr></thead><tbody>`;
-    if(!h.peserta?.length) t+=`<tr><td colspan="4">Tiada peserta.</td></tr>`;
-    else {
-        h.peserta.sort((a,b)=>a.lorong-b.lorong);
-        h.peserta.forEach((p,i) => {
-            const isRecord = p.pecahRekod ? 'bg-warning bg-opacity-25' : '';
-            t+=`<tr data-idx="${i}" class="${isRecord}"><td class="fw-bold fs-5">${p.lorong}</td>
-            <td class="text-start">${p.nama}<br><small>${p.noBib||'-'} (${p.sekolah||p.idRumah})</small></td>
-            <td>${readOnly?p.pencapaian||'':`<input class="form-control text-center res-input" data-idx="${i}" value="${p.pencapaian||''}" placeholder="00.00">`}</td>
-            <td>${readOnly?p.kedudukan||'':`<input type="number" class="form-control text-center ked-input" data-idx="${i}" value="${p.kedudukan||''}">`}</td></tr>`;
-        });
-    }
-    t+=`</tbody></table>`;
-    if(!readOnly) t+=`<button class="btn btn-primary w-100 mt-3 d-print-none" id="btn-save-results">SIMPAN KEPUTUSAN</button>`;
-    return t;
-}
-
-// B. PADANG
-function renderBorangPadang(h, readOnly) {
-    let t = `<table class="table table-bordered text-center align-middle mb-0"><thead class="table-dark"><tr><th>No</th><th>Nama</th><th>Jarak (m)</th><th>Rank</th></tr></thead><tbody>`;
-    if(!h.peserta?.length) t+=`<tr><td colspan="4">Tiada peserta.</td></tr>`;
-    else {
-        h.peserta.sort((a,b)=>(a.noBib||'').localeCompare(b.noBib||''));
-        h.peserta.forEach((p,i) => {
-            const isRecord = p.pecahRekod ? 'bg-warning bg-opacity-25' : '';
-            t+=`<tr data-idx="${i}" class="${isRecord}"><td>${i+1}</td>
-            <td class="text-start">${p.nama}<br><small>${p.noBib||'-'} (${p.sekolah||p.idRumah})</small></td>
-            <td>${readOnly?p.pencapaian||'':`<input class="form-control text-center res-input" data-idx="${i}" value="${p.pencapaian||''}" placeholder="0.00">`}</td>
-            <td>${readOnly?p.kedudukan||'':`<input type="number" class="form-control text-center ked-input" data-idx="${i}" value="${p.kedudukan||''}">`}</td></tr>`;
-        });
-    }
-    t+=`</tbody></table>`;
-    if(!readOnly) t+=`<button class="btn btn-primary w-100 mt-3 d-print-none" id="btn-save-results">SIMPAN KEPUTUSAN</button>`;
-    return t;
-}
-
-// C. LOMPAT TINGGI (FIXED LAYOUT CSS)
-function renderBorangLompatTinggi(h, readOnly) {
-    let heights = new Set();
-    if(h.peserta) h.peserta.forEach(p => { if(p.rekodLompatan) Object.keys(p.rekodLompatan).forEach(k=>heights.add(k)); });
+    // Header Table
+    let t = `
+    <div class="table-responsive">
+    <table class="table table-bordered text-center align-middle mb-0 shadow-sm">
+        <thead class="table-dark">
+            <tr>
+                <th width="10%">Lorong</th>
+                <th width="50%" class="text-start ps-3">Nama Peserta</th>
+                <th width="20%">Masa (s)</th>
+                <th width="20%">Kedudukan</th>
+            </tr>
+        </thead>
+        <tbody>`;
     
-    // Susun ketinggian ikut nombor
-    let cols = Array.from(heights).sort((a,b)=>parseFloat(a)-parseFloat(b));
+    if(!h.peserta?.length) {
+        t+=`<tr><td colspan="4" class="py-4 text-muted fst-italic">Tiada peserta didaftarkan dalam saringan ini.</td></tr>`;
+    } else {
+        // Susun ikut lorong
+        h.peserta.sort((a,b) => parseInt(a.lorong) - parseInt(b.lorong));
+        
+        h.peserta.forEach((p,i) => {
+            const isRecord = p.pecahRekod ? 'table-warning' : ''; // Highlight jika rekod pecah
+            t += `
+            <tr data-idx="${i}" class="${isRecord}">
+                <td class="fw-bold fs-5 bg-light">${p.lorong}</td>
+                <td class="text-start ps-3">
+                    <div class="fw-bold text-uppercase">${p.nama}</div>
+                    <div class="small text-muted d-flex gap-2">
+                        <span class="badge bg-secondary">${p.noBib||'-'}</span>
+                        <span>${p.sekolah || p.idRumah || ''}</span>
+                    </div>
+                </td>
+                <td>
+                    ${readOnly ? 
+                        (p.pencapaian || '-') : 
+                        `<input type="text" class="form-control text-center fw-bold res-input" data-idx="${i}" value="${p.pencapaian||''}" placeholder="00.00">`
+                    }
+                </td>
+                <td>
+                    ${readOnly ? 
+                        (p.kedudukan || '-') : 
+                        `<input type="number" class="form-control text-center fw-bold ked-input" data-idx="${i}" value="${p.kedudukan||''}" min="0" max="20">`
+                    }
+                </td>
+            </tr>`;
+        });
+    }
+    t += `</tbody></table></div>`;
+    
+    if(!readOnly) {
+        t += `<div class="d-grid mt-3 d-print-none">
+                <button class="btn btn-primary btn-lg" id="btn-save-results">
+                    <i class="bi bi-save me-2"></i>SIMPAN KEPUTUSAN
+                </button>
+              </div>`;
+    }
+    return t;
+}
+
+// --- FUNGSI RENDER: TABLE PADANG (FIELD) ---
+function renderBorangPadang(h, readOnly) {
+    let t = `
+    <div class="table-responsive">
+    <table class="table table-bordered text-center align-middle mb-0 shadow-sm">
+        <thead class="table-dark">
+            <tr>
+                <th width="10%">No.</th>
+                <th width="50%" class="text-start ps-3">Nama Peserta</th>
+                <th width="20%">Jarak (m)</th>
+                <th width="20%">Kedudukan</th>
+            </tr>
+        </thead>
+        <tbody>`;
+    
+    if(!h.peserta?.length) {
+        t+=`<tr><td colspan="4" class="py-4 text-muted">Tiada peserta.</td></tr>`;
+    } else {
+        // Susun ikut No Bib
+        h.peserta.sort((a,b) => (a.noBib||'').localeCompare(b.noBib||''));
+        
+        h.peserta.forEach((p,i) => {
+            const isRecord = p.pecahRekod ? 'table-warning' : '';
+            t += `
+            <tr data-idx="${i}" class="${isRecord}">
+                <td class="bg-light">${i+1}</td>
+                <td class="text-start ps-3">
+                    <div class="fw-bold text-uppercase">${p.nama}</div>
+                    <div class="small text-muted"><span class="badge bg-secondary">${p.noBib||'-'}</span> (${p.sekolah || p.idRumah || ''})</div>
+                </td>
+                <td>
+                    ${readOnly ? 
+                        (p.pencapaian || '-') : 
+                        `<input type="text" class="form-control text-center fw-bold res-input" data-idx="${i}" value="${p.pencapaian||''}" placeholder="0.00">`
+                    }
+                </td>
+                <td>
+                    ${readOnly ? 
+                        (p.kedudukan || '-') : 
+                        `<input type="number" class="form-control text-center fw-bold ked-input" data-idx="${i}" value="${p.kedudukan||''}" min="0">`
+                    }
+                </td>
+            </tr>`;
+        });
+    }
+    t += `</tbody></table></div>`;
+    
+    if(!readOnly) {
+        t += `<div class="d-grid mt-3 d-print-none">
+                <button class="btn btn-primary btn-lg" id="btn-save-results">SIMPAN KEPUTUSAN</button>
+              </div>`;
+    }
+    return t;
+}
+
+// --- FUNGSI RENDER: TABLE LOMPAT TINGGI (DIPERBAIKI) ---
+function renderBorangLompatTinggi(h, readOnly) {
+    // 1. Kumpul semua ketinggian yang ada
+    let heights = new Set();
+    if(h.peserta) {
+        h.peserta.forEach(p => { 
+            if(p.rekodLompatan) {
+                Object.keys(p.rekodLompatan).forEach(k => heights.add(k)); 
+            }
+        });
+    }
+    
+    // Susun ketinggian secara numerik (rendah ke tinggi)
+    let cols = Array.from(heights).sort((a,b) => parseFloat(a) - parseFloat(b));
     
     let t = ``;
+    // Butang Tambah Ketinggian (Hanya mode edit)
     if(!readOnly) {
-        t += `<div class="d-flex justify-content-between alert alert-info py-2 d-print-none align-items-center">
-            <small>Klik "Tambah Ketinggian" dahulu.</small>
-            <button class="btn btn-sm btn-dark rounded-pill" id="btn-add-height"><i class="bi bi-plus"></i> Tambah Ketinggian</button>
+        t += `<div class="d-flex justify-content-between alert alert-info py-2 d-print-none align-items-center mb-2">
+            <small><i class="bi bi-info-circle me-1"></i>Sila klik "Tambah Ketinggian" untuk menambah lajur palang baru.</small>
+            <button class="btn btn-sm btn-dark rounded-pill shadow-sm" id="btn-add-height">
+                <i class="bi bi-plus-lg me-1"></i>Tambah Ketinggian
+            </button>
         </div>`;
     }
 
-    // GUNAKAN WRAPPER CSS BARU
-    t += `<div class="table-highjump-wrapper bg-white shadow-sm p-0 border">
-    <table class="table table-bordered text-center align-middle table-sm border-dark mb-0" style="min-width: 100%;">
-    <thead class="table-dark small"><tr>
-        <th style="min-width:40px; position:sticky; left:0; z-index:5;">No</th>
-        <th class="text-start" style="min-width:180px; position:sticky; left:40px; z-index:5;">Nama</th>
-        ${cols.map(c=>`<th style="min-width:50px">${parseFloat(c).toFixed(2)}m</th>`).join('')}
-        <th class="th-fixed col-best-fixed bg-primary text-white">Best</th>
-        <th class="th-fixed col-rank-fixed bg-dark text-white">Rank</th>
-    </tr></thead><tbody>`;
+    // Menggunakan Wrapper CSS 'table-highjump-wrapper' (dari admin.html) untuk scrolling
+    t += `
+    <div class="table-highjump-wrapper bg-white shadow-sm p-0 border rounded">
+        <table class="table table-bordered text-center align-middle table-sm border-dark mb-0" style="min-width: 100%;">
+            <thead class="table-dark small">
+                <tr>
+                    <th style="min-width:40px; position:sticky; left:0; z-index:10;" class="bg-dark text-white border-end">No</th>
+                    <th class="text-start" style="min-width:200px; position:sticky; left:40px; z-index:10;" class="bg-dark text-white border-end">Nama Peserta</th>
+                    
+                    ${cols.map(c => `<th style="min-width:60px; font-family:monospace;">${parseFloat(c).toFixed(2)}m</th>`).join('')}
+                    
+                    <th class="th-fixed col-best-fixed bg-primary text-white" style="border-left:2px solid #aaa;">Best</th>
+                    <th class="th-fixed col-rank-fixed bg-dark text-white">Rank</th>
+                </tr>
+            </thead>
+            <tbody>`;
 
-    if(!h.peserta?.length) t+=`<tr><td colspan="${4+cols.length}">Tiada peserta.</td></tr>`;
-    else {
-        h.peserta.sort((a,b)=>(a.noBib||'').localeCompare(b.noBib||''));
+    if(!h.peserta?.length) {
+        t += `<tr><td colspan="${4+cols.length}" class="py-5 text-muted">Tiada peserta didaftarkan.</td></tr>`;
+    } else {
+        // Susun peserta ikut No Bib
+        h.peserta.sort((a,b) => (a.noBib||'').localeCompare(b.noBib||''));
+        
         h.peserta.forEach((p,i) => {
             const isRecord = p.pecahRekod ? 'bg-warning bg-opacity-25' : '';
-            t+=`<tr data-idx="${i}" class="${isRecord}">
-            <td style="position:sticky; left:0; background:#fff;">${i+1}</td>
-            <td class="text-start text-wrap" style="position:sticky; left:40px; background:#fff;">
-                <div class="fw-bold">${p.nama}</div><small>${p.noBib||'-'}</small>
-            </td>
-            ${cols.map(c => {
-                const val = p.rekodLompatan?.[c]?.join('') || '';
-                return `<td class="p-0">${readOnly ? `<div style="font-weight:bold;">${val}</div>` : 
-                `<input type="text" class="form-control form-control-sm border-0 text-center fw-bold hj-input p-0" 
-                style="height:35px;text-transform:uppercase;letter-spacing:2px;" data-ht="${c}" value="${val}" maxlength="3">`}</td>`;
-            }).join('')}
             
-            <td class="td-fixed col-best-fixed bg-light border-start">
-                ${readOnly?p.pencapaian||'':`<input class="form-control form-control-sm text-center fw-bold res-input" data-idx="${i}" value="${p.pencapaian||''}">`}
-            </td>
-            <td class="td-fixed col-rank-fixed bg-light">
-                ${readOnly?p.kedudukan||'':`<input type="number" class="form-control form-control-sm text-center ked-input" data-idx="${i}" value="${p.kedudukan>0?p.kedudukan:''}">`}
-            </td>
+            t += `<tr data-idx="${i}" class="${isRecord}">
+                <td style="position:sticky; left:0; background:#fff; z-index:5;" class="border-end">${i+1}</td>
+                <td class="text-start text-wrap border-end" style="position:sticky; left:40px; background:#fff; z-index:5;">
+                    <div class="fw-bold">${p.nama}</div>
+                    <small class="text-muted font-monospace">${p.noBib||'-'}</small>
+                </td>
+                
+                ${cols.map(c => {
+                    const val = p.rekodLompatan?.[c]?.join('') || '';
+                    return `<td class="p-0">
+                        ${readOnly ? 
+                            `<div class="fw-bold py-2">${val}</div>` : 
+                            `<input type="text" class="form-control form-control-sm border-0 text-center fw-bold hj-input p-0" 
+                              style="height:38px; text-transform:uppercase; letter-spacing:2px; font-family:monospace;" 
+                              data-ht="${c}" value="${val}" maxlength="3">`
+                        }
+                    </td>`;
+                }).join('')}
+                
+                <td class="td-fixed col-best-fixed bg-light border-start border-secondary">
+                    ${readOnly ? 
+                        (p.pencapaian||'') : 
+                        `<input class="form-control form-control-sm text-center fw-bold res-input" data-idx="${i}" value="${p.pencapaian||''}">`
+                    }
+                </td>
+                <td class="td-fixed col-rank-fixed bg-light border-start">
+                    ${readOnly ? 
+                        (p.kedudukan||'') : 
+                        `<input type="number" class="form-control form-control-sm text-center ked-input" data-idx="${i}" value="${p.kedudukan>0?p.kedudukan:''}">`
+                    }
+                </td>
             </tr>`;
         });
     }
     t += `</tbody></table></div>`;
 
-    if(!readOnly) t += `<button class="btn btn-primary w-100 mt-3 d-print-none" id="btn-save-results">SIMPAN KEPUTUSAN</button>`;
+    if(!readOnly) {
+        t += `<button class="btn btn-primary w-100 mt-3 d-print-none btn-lg shadow" id="btn-save-results">
+                <i class="bi bi-save2 me-2"></i>SIMPAN KEPUTUSAN LOMPAT TINGGI
+              </button>`;
+    }
     
-    // Footer Tandatangan
+    // Footer untuk cetakan tandatangan rasmi
     t += `<div class="row mt-5 d-none d-print-flex" style="page-break-inside: avoid;">
-            <div class="col-6 text-center"><br>_______________________<br>Tandatangan Hakim</div>
-            <div class="col-6 text-center"><br>_______________________<br>Tandatangan Refri</div>
+            <div class="col-6 text-center">
+                <br><br>_______________________<br>
+                <strong>Tandatangan Hakim</strong>
+            </div>
+            <div class="col-6 text-center">
+                <br><br>_______________________<br>
+                <strong>Tandatangan Refri</strong>
+            </div>
           </div>`;
     
     return t;
 }
 
 // ==============================================================================
-// 8. LOGIK SIMPAN KEPUTUSAN (DENGAN PENGESAN REKOD BARU)
+// BAHAGIAN G: LOGIK SIMPAN DATA (CORE LOGIC)
 // ==============================================================================
+
+/**
+ * Event Listener Utama untuk butang-butang interaktif dalam borang.
+ * Mengendalikan Simpan Keputusan, Tambah Ketinggian, dan Kira Olahragawan.
+ */
 document.addEventListener('click', async (e) => {
     
-    // BUTANG SIMPAN KEPUTUSAN
+    // --- 1. LOGIK SIMPAN KEPUTUSAN ---
     if(e.target.closest('#btn-save-results')) {
         e.preventDefault();
         const btn = document.querySelector('#btn-save-results');
-        btn.disabled = true; btn.innerText = "Menyimpan...";
+        
+        // UX: Disable butang supaya user tak spam click
+        btn.disabled = true; 
+        btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2"></span>Menyimpan...`;
 
         try {
-            if(!window.currentHeatData) throw new Error("Tiada data saringan aktif.");
+            if(!window.currentHeatData) throw new Error("Tiada data saringan aktif untuk disimpan.");
             
-            let peserta = window.currentHeatData.peserta || [];
+            // Clone data peserta untuk elak mutasi langsung yang tak diingini
+            let peserta = JSON.parse(JSON.stringify(window.currentHeatData.peserta || []));
             let recordBroken = false;
 
-            // Dapatkan info rekod semasa (jika ada) untuk perbandingan
+            // Dapatkan nilai rekod semasa untuk perbandingan
             const currentRecVal = window.currentRecordData ? parseFloat(window.currentRecordData.catatan) : null;
             
-            // Logic Simpan Data
+            // Loop setiap peserta untuk ambil nilai input
             peserta.forEach((p, idx) => {
-                // 1. Ambil Input (Res & Rank)
+                // Cari input element berdasarkan data-idx
                 const resInput = document.querySelector(`.res-input[data-idx="${idx}"]`);
                 const kedInput = document.querySelector(`.ked-input[data-idx="${idx}"]`);
                 
+                // Update Data
                 if(resInput) p.pencapaian = resInput.value.trim().toUpperCase();
                 if(kedInput) p.kedudukan = kedInput.value ? parseInt(kedInput.value) : 0;
 
-                // 2. Logic Check Rekod Baru
-                p.pecahRekod = false; // Reset dulu
+                // --- CHECK REKOD BARU ---
+                p.pecahRekod = false; // Reset flag
                 if(p.pencapaian && currentRecVal && !isNaN(parseFloat(p.pencapaian))) {
                     const val = parseFloat(p.pencapaian);
-                    const isField = window.currentLabel.toUpperCase().includes("LOMPAT") || window.currentLabel.toUpperCase().includes("LONTAR");
                     
-                    // Balapan: Masa lagi rendah = Rekod | Padang: Jarak lagi tinggi = Rekod
-                    if(!isField && val < currentRecVal) { p.pecahRekod = true; recordBroken = true; }
-                    if(isField && val > currentRecVal) { p.pecahRekod = true; recordBroken = true; }
+                    // Logic berbeza untuk Padang vs Balapan
+                    const isField = window.currentLabel.toUpperCase().includes("LOMPAT") || window.currentLabel.toUpperCase().includes("LONTAR") || window.currentLabel.toUpperCase().includes("REJAM");
+                    
+                    if(!isField) {
+                        // Balapan: Masa MESTI LEBIH KECIL dari rekod
+                        if(val < currentRecVal && val > 0) { 
+                            p.pecahRekod = true; 
+                            recordBroken = true; 
+                        }
+                    } else {
+                        // Padang: Jarak MESTI LEBIH BESAR dari rekod
+                        if(val > currentRecVal) { 
+                            p.pecahRekod = true; 
+                            recordBroken = true; 
+                        }
+                    }
                 }
 
-                // 3. Ambil Input Lompat Tinggi (Jika ada)
+                // Logic Khas Lompat Tinggi (Ambil data grid)
                 if(window.currentLabel.toUpperCase().includes("LOMPAT TINGGI")) {
                     const row = document.querySelector(`tr[data-idx="${idx}"]`);
                     if(row) {
                         row.querySelectorAll('.hj-input').forEach(hjEl => {
                             const ht = hjEl.dataset.ht;
                             if(!p.rekodLompatan) p.rekodLompatan = {};
+                            // Simpan sebagai array char (cth: ['X','O'])
                             p.rekodLompatan[ht] = hjEl.value.toUpperCase().split('');
                         });
                     }
                 }
             });
 
-            // Update DB
+            // Simpan ke Firestore
             await saveHeatResults(tahunAktif, window.currentEventId, window.currentHeatId, peserta);
             
-            // Update Status Acara Induk (Jika Akhir & Ada Pemenang)
+            // Auto Update Status Acara Induk
+            // Jika ini Acara Akhir, tandakan acara sebagai 'Selesai' supaya dashboard Olahragawan boleh kira
             if(window.currentHeatData.jenis === 'akhir') {
-                 await updateDoc(doc(db, "kejohanan", tahunAktif, "acara", window.currentEventId), { status: 'selesai' });
+                 await updateDoc(doc(db, "kejohanan", tahunAktif, "acara", window.currentEventId), { 
+                     status: 'selesai',
+                     updatedAt: new Date().toISOString()
+                 });
             }
 
-            alert("Keputusan Disimpan!");
+            alert("Data keputusan berjaya disimpan!");
 
-            // Jika ada rekod baru, update UI alert
+            // Papar notifikasi jika rekod pecah
             if(recordBroken) {
                 const alertBox = document.getElementById('new-record-alert');
-                if(alertBox) alertBox.classList.remove('d-none');
+                if(alertBox) {
+                    alertBox.classList.remove('d-none');
+                    alertBox.scrollIntoView({ behavior: 'smooth' });
+                }
             }
 
-            // Refresh UI
+            // Refresh Borang untuk nampak perubahan
             pilihSaringan(window.currentEventId, window.currentHeatId, window.currentLabel, window.currentMode);
 
         } catch(err) {
             console.error(err);
             alert("Gagal Simpan: " + err.message);
-            btn.disabled = false; btn.innerText = "Cuba Lagi";
+            btn.disabled = false; 
+            btn.innerHTML = `<i class="bi bi-save me-2"></i>Cuba Lagi`;
         }
     }
 
-    // BUTANG TAMBAH KETINGGIAN (Lompat Tinggi)
+    // --- 2. LOGIK TAMBAH KETINGGIAN (LOMPAT TINGGI) ---
     if(e.target.closest('#btn-add-height')) {
         e.preventDefault();
-        const val = prompt("Masukkan ketinggian (contoh: 1.25):");
+        const val = prompt("Masukkan ketinggian baru (contoh: 1.25):");
+        
         if(val) {
-            const num = parseFloat(val).toFixed(2);
-            if(isNaN(num)) return alert("Nombor tidak sah.");
+            const num = parseFloat(val).toFixed(2); // Paksa 2 titik perpuluhan
+            if(isNaN(num)) return alert("Sila masukkan nombor yang sah.");
             
+            // Tambah key ketinggian kosong pada semua peserta
             if(window.currentHeatData?.peserta) {
                 window.currentHeatData.peserta.forEach(p => {
                     if(!p.rekodLompatan) p.rekodLompatan = {};
                     if(!p.rekodLompatan[num]) p.rekodLompatan[num] = [];
                 });
+                
+                // Refresh UI untuk tunjuk kolum baru
                 pilihSaringan(window.currentEventId, window.currentHeatId, window.currentLabel, window.currentMode);
             }
         }
     }
     
-    // BUTANG KIRA OLAHRAGAWAN (BARU)
+    // --- 3. LOGIK KIRA OLAHRAGAWAN (CIRI BARU) ---
     if(e.target.id === 'btn-kira-olahragawan') {
         kiraStatistikPemenang();
     }
 });
 
 // ==============================================================================
-// 9. DASHBOARD OLAHRAGAWAN & STATISTIK (FUNGSI BARU)
+// BAHAGIAN H: DASHBOARD OLAHRAGAWAN & STATISTIK
 // ==============================================================================
+
+/**
+ * Mengira pemenang Olahragawan dan Olahragawati berdasarkan logik:
+ * 1. Jumlah Rekod Baru (Utama)
+ * 2. Jumlah Emas
+ * 3. Jumlah Perak
+ * 4. Jumlah Gangsa
+ */
 async function kiraStatistikPemenang() {
     const btn = document.getElementById('btn-kira-olahragawan');
-    btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Mengira...';
+    btn.disabled = true; 
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Sedang Mengira Data...';
 
     try {
-        // 1. Dapatkan Semua Acara Selesai
+        console.log("Memulakan pengiraan statistik...");
+        
+        // 1. Tarik SEMUA acara
         const eventsSnap = await getDocs(collection(db, "kejohanan", tahunAktif, "acara"));
-        let allPesertaStats = {}; // Map: { idPeserta: { nama, rumah, kat, emas, perak, gangsa, rekod } }
+        
+        // Objek untuk kumpul statistik setiap murid
+        // Format Key: ID Peserta, Value: { nama, rumah, kat, emas, perak, gangsa, rekod }
+        let allPesertaStats = {}; 
 
-        // Loop setiap acara
+        // Loop melalui setiap acara
         for(let evDoc of eventsSnap.docs) {
             const ev = evDoc.data();
-            // Ambil subcollection saringan
+            
+            // Hanya kira jika acara sudah 'selesai' untuk jimat resource (optional)
+            // Tapi lebih selamat check semua saringan akhir
+            
             const heatSnap = await getDocs(collection(db, "kejohanan", tahunAktif, "acara", evDoc.id, "saringan"));
             
             heatSnap.forEach(hDoc => {
                 const h = hDoc.data();
-                // Kira hanya jika Acara Akhir & status selesai
-                if(h.jenis === 'akhir' && h.peserta) {
+                
+                // KITA HANYA KIRA KEPUTUSAN ACARA AKHIR SAHAJA
+                if(h.jenis === 'akhir' && h.peserta && Array.isArray(h.peserta)) {
+                    
                     h.peserta.forEach(p => {
+                        // Skip jika tiada ID (peserta hantu?)
                         if(!p.idPeserta) return;
                         
-                        // Init object peserta jika belum ada
+                        // Initialize data peserta jika belum ada dalam map
                         if(!allPesertaStats[p.idPeserta]) {
                             allPesertaStats[p.idPeserta] = {
                                 nama: p.nama,
                                 rumah: p.idRumah,
-                                kategori: ev.kategori, // Guna kategori acara sebagai rujukan
-                                emas: 0, perak: 0, gangsa: 0, rekod: 0
+                                kategori: ev.kategori, // Ambil kategori dari acara induk
+                                emas: 0, 
+                                perak: 0, 
+                                gangsa: 0, 
+                                rekod: 0
                             };
                         }
 
-                        // Tambah pingat
+                        // Logik Tambah Pingat
                         if(p.kedudukan === 1) allPesertaStats[p.idPeserta].emas++;
                         else if(p.kedudukan === 2) allPesertaStats[p.idPeserta].perak++;
                         else if(p.kedudukan === 3) allPesertaStats[p.idPeserta].gangsa++;
 
-                        // Tambah rekod baru (Flag dari fungsi Simpan Keputusan)
+                        // Logik Tambah Rekod (Flag ini datang dari fungsi Save tadi)
                         if(p.pecahRekod === true) allPesertaStats[p.idPeserta].rekod++;
                     });
                 }
             });
         }
 
-        // 2. Fungsi Sorting (Rekod > Emas > Perak > Gangsa)
+        // 2. Fungsi Sorting Custom (Rekod > Emas > Perak > Gangsa)
         const sortWinners = (list) => {
             return list.sort((a, b) => {
-                if(b.rekod !== a.rekod) return b.rekod - a.rekod; // Rekod paling utama
-                if(b.emas !== a.emas) return b.emas - a.emas;
-                if(b.perak !== a.perak) return b.perak - a.perak;
-                return b.gangsa - a.gangsa;
+                if(b.rekod !== a.rekod) return b.rekod - a.rekod; // Utamakan Rekod
+                if(b.emas !== a.emas) return b.emas - a.emas;     // Kemudian Emas
+                if(b.perak !== a.perak) return b.perak - a.perak; // Kemudian Perak
+                return b.gangsa - a.gangsa;                       // Akhir sekali Gangsa
             });
         };
 
-        // 3. Kategori Pemenang
+        // Tukar object ke array untuk sorting
         const statsArray = Object.values(allPesertaStats);
         
+        // 3. Cari Pemenang Ikut Kategori
+
         // A. Olahragawan 12T (L12)
-        const topL12 = sortWinners(statsArray.filter(p => p.kategori === 'L12'))[0];
-        updateWinnerCard('winner-L12', 'stats-L12', topL12);
+        const calonL12 = statsArray.filter(p => p.kategori === 'L12');
+        const winnerL12 = sortWinners(calonL12)[0];
+        updateWinnerCard('winner-L12', 'stats-L12', winnerL12);
 
         // B. Olahragawati 12T (P12)
-        const topP12 = sortWinners(statsArray.filter(p => p.kategori === 'P12'))[0];
-        updateWinnerCard('winner-P12', 'stats-P12', topP12);
+        const calonP12 = statsArray.filter(p => p.kategori === 'P12');
+        const winnerP12 = sortWinners(calonP12)[0];
+        updateWinnerCard('winner-P12', 'stats-P12', winnerP12);
 
-        // C. Olahragawan Harapan (L9 + L10)
-        const topHarapanL = sortWinners(statsArray.filter(p => ['L9','L10'].includes(p.kategori)))[0];
-        updateWinnerCard('winner-harapan-L', 'stats-harapan-L', topHarapanL);
+        // C. Olahragawan Harapan (Gabungan L9 & L10)
+        const calonHarapanL = statsArray.filter(p => ['L9','L10'].includes(p.kategori));
+        const winnerHarapanL = sortWinners(calonHarapanL)[0];
+        updateWinnerCard('winner-harapan-L', 'stats-harapan-L', winnerHarapanL);
 
-        // D. Olahragawati Harapan (P9 + P10)
-        const topHarapanP = sortWinners(statsArray.filter(p => ['P9','P10'].includes(p.kategori)))[0];
-        updateWinnerCard('winner-harapan-P', 'stats-harapan-P', topHarapanP);
+        // D. Olahragawati Harapan (Gabungan P9 & P10)
+        const calonHarapanP = statsArray.filter(p => ['P9','P10'].includes(p.kategori));
+        const winnerHarapanP = sortWinners(calonHarapanP)[0];
+        updateWinnerCard('winner-harapan-P', 'stats-harapan-P', winnerHarapanP);
 
-        // 4. Update Jadual Penuh (Top 10)
-        const allSorted = sortWinners(statsArray).slice(0, 10);
+        // 4. Paparkan Jadual Penuh (Top 20 Keseluruhan)
+        // Kita sort semua peserta tanpa mengira kategori untuk ranking umum
+        const allSorted = sortWinners(statsArray).slice(0, 20); // Ambil Top 20
         const tbody = document.querySelector('#table-ranking-full tbody');
-        tbody.innerHTML = allSorted.map((p, i) => `
-            <tr>
-                <td>${i+1}</td>
-                <td class="fw-bold">${p.nama}</td>
-                <td>${p.kategori}</td>
-                <td class="text-uppercase">${p.rumah}</td>
-                <td class="text-center fw-bold text-danger">${p.rekod > 0 ? p.rekod : '-'}</td>
-                <td class="text-center text-warning fw-bold">${p.emas}</td>
-                <td class="text-center">${p.perak}</td>
-                <td class="text-center" style="color:#cd7f32">${p.gangsa}</td>
-            </tr>
-        `).join('');
+        
+        if(allSorted.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="8" class="text-center py-3">Tiada data keputusan dijumpai.</td></tr>`;
+        } else {
+            tbody.innerHTML = allSorted.map((p, i) => `
+                <tr>
+                    <td>${i+1}</td>
+                    <td class="fw-bold">${p.nama}</td>
+                    <td><span class="badge bg-secondary">${p.kategori}</span></td>
+                    <td class="text-uppercase fw-bold text-${p.rumah==='kuning'?'warning':p.rumah}">${p.rumah}</td>
+                    <td class="text-center fw-bold bg-danger bg-opacity-10 text-danger">${p.rekod > 0 ? p.rekod : '-'}</td>
+                    <td class="text-center text-warning fw-bold fs-5">${p.emas}</td>
+                    <td class="text-center fw-bold text-secondary fs-5">${p.perak}</td>
+                    <td class="text-center fw-bold fs-5" style="color:#cd7f32">${p.gangsa}</td>
+                </tr>
+            `).join('');
+        }
 
-        alert("Pengiraan Selesai!");
+        alert("Pengiraan statistik selesai!");
 
     } catch(e) {
-        console.error(e);
+        console.error("Ralat Pengiraan:", e);
         alert("Ralat Pengiraan: " + e.message);
     } finally {
-        btn.disabled = false; btn.innerHTML = '<i class="bi bi-calculator me-2"></i>Kira Pemenang';
+        btn.disabled = false; 
+        btn.innerHTML = '<i class="bi bi-calculator me-2"></i>Kira Pemenang';
     }
 }
 
+// Fungsi Helper untuk Update Kad Pemenang di HTML
 function updateWinnerCard(idTitle, idStats, data) {
     if(data) {
-        document.getElementById(idTitle).innerHTML = `<h5 class="mb-0 fw-bold">${data.nama}</h5><small>${data.rumah.toUpperCase()}</small>`;
+        // Jika ada pemenang
+        document.getElementById(idTitle).innerHTML = `
+            <h5 class="mb-0 fw-bold text-dark">${data.nama}</h5>
+            <small class="text-uppercase text-muted fw-bold">${data.rumah}</small>
+        `;
         document.getElementById(idStats).innerHTML = `
-            <span class="badge bg-danger me-1">Rekod: ${data.rekod}</span>
-            <span class="badge bg-warning text-dark">Emas: ${data.emas}</span>
-            <span class="badge bg-secondary">Perak: ${data.perak}</span>
-            <span class="badge" style="background:#cd7f32">Gangsa: ${data.gangsa}</span>
+            <div class="d-flex justify-content-between mt-2">
+                <span class="badge bg-danger rounded-pill">Rekod: ${data.rekod}</span>
+                <span class="badge bg-warning text-dark rounded-pill">Emas: ${data.emas}</span>
+            </div>
+            <div class="d-flex justify-content-between mt-1">
+                <span class="badge bg-secondary rounded-pill">Perak: ${data.perak}</span>
+                <span class="badge rounded-pill" style="background:#cd7f32">Gangsa: ${data.gangsa}</span>
+            </div>
         `;
     } else {
-        document.getElementById(idTitle).innerHTML = `<h5 class="mb-0">Tiada Data</h5>`;
-        document.getElementById(idStats).innerHTML = `-`;
+        // Jika tiada data
+        document.getElementById(idTitle).innerHTML = `<h5 class="mb-0 text-muted fst-italic">Tiada Calon</h5>`;
+        document.getElementById(idStats).innerHTML = `<small class="text-muted">Belum ada pingat dimenangi.</small>`;
     }
 }
 
 // ==============================================================================
-// 10. AUTO AGIHAN LORONG
+// BAHAGIAN I: FUNGSI AGIHAN LORONG AUTOMATIK
 // ==============================================================================
+
+/**
+ * Fungsi ini menarik peserta dari senarai pendaftaran (koleksi 'peserta')
+ * dan memasukkan mereka ke dalam saringan secara automatik.
+ * Digunakan jika guru rumah sudah daftar nama, tetapi Admin belum buat saringan.
+ */
 window.agihLorongAuto = async (eventId, heatId, label, mode) => {
-    if(!confirm("Tarik peserta secara automatik? Data sedia ada akan ditulis ganti.")) return;
+    if(!confirm("Adakah anda pasti mahu menarik peserta secara automatik? \nAMARAN: Data sedia ada dalam saringan ini akan digantikan.")) return;
+    
     try {
+        // 1. Dapatkan info acara induk untuk tahu Kategori (L12, P10, dll)
         const evSnap = await getDoc(doc(db, "kejohanan", tahunAktif, "acara", eventId));
-        if(!evSnap.exists()) return;
+        if(!evSnap.exists()) return alert("Acara tidak wujud.");
         const evData = evSnap.data();
         
-        // Cari peserta
+        console.log(`Mengambil peserta untuk kategori: ${evData.kategori}`);
+
+        // 2. Query semua peserta dalam kategori tersebut
         const q = query(collection(db, "kejohanan", tahunAktif, "peserta"), where("kategori", "==", evData.kategori));
         const pSnap = await getDocs(q);
         
-        let valid = [];
+        let validParticipants = [];
+        
+        // 3. Filter peserta yang mendaftar untuk acara ini
         pSnap.forEach(d => {
             const p = d.data();
-            // Semak if peserta daftar acara ini
             let isRegistered = false;
-            // Support format acara object { "100m": true } atau string
-            if(p.acara && typeof p.acara === 'object' && p.acara[evData.nama]) isRegistered = true;
+            
+            // Semak struktur data pendaftaran peserta
+            // Kadang-kadang format { "100m": true } atau array ["100m"]
+            if(p.acara) {
+                if(typeof p.acara === 'object' && !Array.isArray(p.acara) && p.acara[evData.nama]) {
+                    isRegistered = true;
+                } else if (Array.isArray(p.acara) && p.acara.includes(evData.nama)) {
+                    isRegistered = true;
+                }
+            }
             
             if(isRegistered) {
-                valid.push({
+                validParticipants.push({
                     idPeserta: d.id, 
                     nama: p.nama, 
                     noBib: p.noBib||'-', 
                     idRumah: p.rumah||p.idRumah||'', 
                     sekolah: p.sekolah||'',
-                    lorong: 0, 
+                    lorong: 0, // Akan diset kemudian
                     pencapaian: '',
                     kedudukan: 0
                 });
             }
         });
 
-        if(valid.length === 0) return alert("Tiada peserta mendaftar.");
+        if(validParticipants.length === 0) return alert("Tiada peserta ditemui yang mendaftar untuk acara ini.");
         
-        // Assign Lorong (Rawak/Urutan)
-        valid = valid.map((p,i) => ({...p, lorong: i+1}));
+        // 4. Assign Lorong (1 - 8)
+        // Kita limitkan max 8 lorong untuk standard, atau ikut jumlah peserta
+        validParticipants = validParticipants.map((p,i) => ({
+            ...p, 
+            lorong: i+1
+        }));
 
-        await updateDoc(doc(db, "kejohanan", tahunAktif, "acara", eventId, "saringan", heatId), { peserta: valid });
-        alert(`Berjaya tarik ${valid.length} peserta.`);
+        // 5. Simpan ke Database
+        await updateDoc(doc(db, "kejohanan", tahunAktif, "acara", eventId, "saringan", heatId), { 
+            peserta: validParticipants,
+            updatedAt: new Date().toISOString()
+        });
+        
+        alert(`Berjaya menarik ${validParticipants.length} peserta ke dalam saringan.`);
+        
+        // Refresh UI
         pilihSaringan(eventId, heatId, label, mode);
 
-    } catch(e) { alert("Ralat Auto: " + e.message); }
+    } catch(e) { 
+        console.error(e);
+        alert("Ralat Agihan Auto: " + e.message); 
+    }
 };
+
+/* TAMAT FAIL main-admin.js */
