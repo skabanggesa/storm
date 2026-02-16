@@ -168,11 +168,11 @@ function setActiveMenu(activeId) {
 // ==============================================================================
 
 async function renderSetupDashboard() {
-    // PEMBETULAN: Gunakan 'main-content' supaya paparan muncul
-    const contentArea = document.getElementById('main-content'); 
+    // PEMBETULAN: Gunakan 'content-area' supaya paparan muncul
+    const contentArea = document.getElementById('content-area'); 
     
     if (!contentArea) {
-        console.error("Ralat: Elemen 'main-content' tidak dijumpai!");
+        console.error("Ralat: Elemen 'content-area' tidak dijumpai!");
         return;
     }
 
@@ -1602,4 +1602,5 @@ function updateWinnerCard(idTitle, idStats, data) {
     }
 }
 // End of File
+
 
