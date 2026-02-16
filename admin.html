@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Dashboard - KOT System</title>
+    
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     
@@ -11,249 +12,216 @@
         :root {
             --primary-blue: #0d6efd;
             --light-bg: #f8f9fa;
+            --sidebar-width: 280px;
         }
+        
         body {
             background-color: var(--light-bg);
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow-x: hidden;
         }
-        .list-group-item { 
-            cursor: pointer; 
-            transition: 0.2s; 
-            border: none;
-            padding: 12px 20px;
-            margin-bottom: 5px;
-            border-radius: 8px !important;
+
+        /* Sidebar Styling */
+        #sidebar-wrapper {
+            min-height: 100vh;
+            margin-left: -var(--sidebar-width);
+            transition: margin 0.25s ease-out;
+            background-color: #212529; /* Dark Sidebar */
+            position: fixed;
+            width: var(--sidebar-width);
+            z-index: 1000;
         }
-        .list-group-item:hover { 
-            background-color: #e9ecef; 
-        }
-        .list-group-item.active { 
-            background-color: var(--primary-blue) !important; 
-            box-shadow: 0 4px 10px rgba(13, 110, 253, 0.2);
-            color: white !important;
-        }
-        .sticky-top-card { 
-            position: sticky; 
-            top: 20px; 
-        }
-        .card {
-            border: none;
-            border-radius: 12px;
-        }
-        .res-input, .trial-input, .hj-input {
-            border: 1px solid #dee2e6;
+
+        #sidebar-wrapper .sidebar-heading {
+            padding: 1.5rem 1.25rem;
+            font-size: 1.2rem;
             font-weight: bold;
-        }
-        .res-input:focus, .trial-input:focus, .hj-input:focus {
-            background-color: #fff9c4;
-            border-color: #fbc02d;
-            box-shadow: none;
+            color: white;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
         }
 
-        /* --- LOGIK CETAKAN --- */
-        @media print {
-            .d-print-none, 
-            .btn, 
-            .list-group, 
-            .input-group,
-            .modal,
-            header,
-            .sidebar-wrapper {
-                display: none !important;
-            }
-            
-            .col-md-9 {
-                width: 100% !important;
-                flex: 0 0 100% !important;
-                max-width: 100% !important;
-            }
-            
-            body {
-                background-color: white !important;
-            }
-            
-            .card {
-                box-shadow: none !important;
-                padding: 0 !important;
-            }
+        #sidebar-wrapper .list-group {
+            width: var(--sidebar-width);
+        }
 
-            .table {
-                border: 1px solid #000 !important;
+        #sidebar-wrapper .list-group-item {
+            background-color: transparent;
+            color: rgba(255,255,255,0.7);
+            border: none;
+            padding: 15px 25px;
+            font-size: 0.95rem;
+        }
+
+        #sidebar-wrapper .list-group-item:hover {
+            background-color: rgba(255,255,255,0.1);
+            color: #fff;
+        }
+
+        #sidebar-wrapper .list-group-item.active {
+            background-color: var(--primary-blue);
+            color: #fff;
+            font-weight: 600;
+        }
+
+        /* Page Content Wrapper */
+        #page-content-wrapper {
+            width: 100%;
+            margin-left: 0;
+            transition: margin 0.25s ease-out;
+        }
+
+        /* Toggler for Mobile */
+        body.sb-sidenav-toggled #sidebar-wrapper {
+            margin-left: 0;
+        }
+        
+        @media (min-width: 768px) {
+            #sidebar-wrapper {
+                margin-left: 0;
             }
-            .table th, .table td {
-                border: 1px solid #000 !important;
-                color: black !important;
+            #page-content-wrapper {
+                margin-left: var(--sidebar-width);
+                width: calc(100% - var(--sidebar-width));
             }
+            body.sb-sidenav-toggled #sidebar-wrapper {
+                margin-left: -var(--sidebar-width);
+            }
+            body.sb-sidenav-toggled #page-content-wrapper {
+                margin-left: 0;
+                width: 100%;
+            }
+        }
+
+        /* Content Area */
+        .container-fluid {
+            padding: 20px;
+        }
+
+        /* Card Styling */
+        .card {
+            border-radius: 10px;
+            border: none;
+            box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+        }
+
+        /* Loading Overlay */
+        #loading-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255,255,255,0.9);
+            z-index: 9999;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            transition: opacity 0.5s;
         }
     </style>
 </head>
-<body class="bg-light">
+<body>
 
-    <div class="container py-4">
-        <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-3 d-print-none">
-            <div>
-                <h2 class="fw-bold text-primary mb-0">
-                    <i class="bi bi-speedometer2 me-2"></i>Panel Kawalan Admin
-                </h2>
-                <small class="text-muted text-uppercase tracking-wider">Sistem Pengurusan Kejohanan Olahraga Tahunan (KOT)</small>
+    <div id="loading-overlay">
+        <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+        <h5 class="mt-3 text-muted">Memuatkan Sistem...</h5>
+    </div>
+
+    <div class="d-flex" id="wrapper">
+        
+        <div class="border-end" id="sidebar-wrapper">
+            <div class="sidebar-heading text-white">
+                <i class="bi bi-speedometer2 me-2"></i>Admin KOT
             </div>
-            <div class="text-end">
-                <button id="btn-logout" class="btn btn-outline-danger btn-sm fw-bold">
-                    <i class="bi bi-box-arrow-right"></i> Log Keluar
-                </button>
-            </div>
+            <div class="list-group list-group-flush">
+                
+                <a href="#" class="list-group-item list-group-item-action" id="menu-setup">
+                    <i class="bi bi-database-gear me-2"></i>Operasi Pangkalan Data
+                </a>
+
+                <a href="daftar_peserta.html" class="list-group-item list-group-item-action" id="menu-peserta">
+                    <i class="bi bi-people me-2"></i>Daftar Peserta
+                </a>
+
+                <a href="#" class="list-group-item list-group-item-action" id="menu-acara">
+                    <i class="bi bi-stopwatch me-2"></i>Urus Acara & Keputusan
+                </a>
+
+                <a href="#" class="list-group-item list-group-item-action" id="menu-olahragawan">
+                    <i class="bi bi-trophy me-2"></i>Olahragawan / Olahragawati
+                </a>
+
+                <a href="index.html" target="_blank" class="list-group-item list-group-item-action">
+                    <i class="bi bi-tv me-2"></i>Paparan Live (Public)
+                </a>
+
+                <hr class="text-white mx-3">
+
+                <a href="#" class="list-group-item list-group-item-action text-danger" id="btn-logout">
+                    <i class="bi bi-box-arrow-right me-2"></i>Log Keluar
+                </a>
+
+                </div>
         </div>
 
-        <div class="row">
-            <div class="col-md-3 mb-4 sidebar-wrapper d-print-none">
-                <div class="list-group shadow-sm sticky-top-card bg-white p-2 rounded">
-                    <button class="list-group-item list-group-item-action active" id="menu-setup">
-                        <i class="bi bi-gear-fill me-2"></i> 1. Setup Tahun Baru
-                    </button>
-                    <button class="list-group-item list-group-item-action" id="menu-acara">
-                        <i class="bi bi-printer me-2"></i> 2. Urus & Cetak Borang
-                    </button>
-                    <button class="list-group-item list-group-item-action" id="menu-keputusan">
-                        <i class="bi bi-pencil-square me-2"></i> 3. Input Keputusan
-                    </button>
-
-                    <a href="keputusan.html" class="list-group-item list-group-item-action text-primary fw-bold border-top mt-1">
-                        <i class="bi bi-trophy-fill me-2"></i> 4. Lihat Keputusan Penuh
-                    </a>
-                    
-                    <hr class="my-2">
-                    
-                    <div class="p-2">
-                        <label class="form-label small fw-bold text-muted">Utility & Database:</label>
-                        
-                        <button class="btn btn-sm btn-outline-secondary w-100 text-start mb-2" id="btn-muat-naik-rekod" data-bs-toggle="modal" data-bs-target="#modalCSV">
-                            <i class="bi bi-file-earmark-spreadsheet me-2"></i> Muat Naik Rekod (.csv)
-                        </button>
-
-                        <button class="btn btn-sm btn-outline-primary w-100 text-start mb-2" id="btn-buka-backup" data-bs-toggle="modal" data-bs-target="#modalBackup">
-                            <i class="bi bi-cloud-download me-2"></i> Backup Data (Eksport)
-                        </button>
-
-                        <button class="btn btn-sm btn-outline-success w-100 text-start mb-2" id="btn-buka-restore" data-bs-toggle="modal" data-bs-target="#modalRestore">
-                            <i class="bi bi-cloud-upload me-2"></i> Restore Data (Import)
-                        </button>
-
-                        <button class="btn btn-sm btn-outline-danger w-100 text-start mb-2" id="btn-buka-padam" data-bs-toggle="modal" data-bs-target="#modalPadam">
-                            <i class="bi bi-trash-fill me-2"></i> Padam Data
-                        </button>
-                    </div>
-                </div>
-            </div>
+        <div id="page-content-wrapper">
             
-            <div class="col-md-9">
-                <div id="content-area" class="card p-4 shadow-sm border-0" style="min-height: 600px;">
-                    <div class="text-center py-5 d-print-none">
-                        <div class="spinner-border text-primary mb-3"></div>
-                        <h4 class="text-secondary">Sila Tunggu...</h4>
-                        <p class="text-muted">Sistem sedang menyediakan antaramuka pengurusan.</p>
-                    </div>
+            <nav class="navbar navbar-expand-lg navbar-light bg-white border-bottom px-3 py-3">
+                <div class="container-fluid px-0">
+                    <button class="btn btn-outline-dark" id="sidebarToggle">
+                        <i class="bi bi-list"></i>
+                    </button>
+                    
+                    <span class="navbar-text ms-auto fw-bold text-primary" id="tahun-label">
+                        Tahun Operasi: -
+                    </span>
                 </div>
-            </div>
-        </div>
-    </div>
+            </nav>
 
-    <div class="modal fade" id="modalCSV" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header bg-secondary text-white">
-                    <h5 class="modal-title"><i class="bi bi-upload me-2"></i>Muat Naik Rekod Kejohanan</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            <div class="container-fluid" id="content-area">
                 </div>
-                <div class="modal-body">
-                    <div class="alert alert-info py-2 small">
-                        <i class="bi bi-info-circle-fill me-1"></i> Format CSV: <strong>REKOD, ACARA, KATEGORI, TAHUN, NAMA</strong>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">Pilih Fail CSV:</label>
-                        <input type="file" id="file-csv" class="form-control" accept=".csv">
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-light border" data-bs-dismiss="modal">Batal</button>
-                    <button type="button" class="btn btn-secondary" id="btn-proses-csv">Mula Proses</button>
-                </div>
-            </div>
-        </div>
-    </div>
+            
+            <div class="container-fluid d-none" id="view-olahragawan">
+                <div class="card shadow-sm border-0 p-4">
+                    <h4 class="fw-bold mb-4 text-primary"><i class="bi bi-trophy me-2"></i>Kira Pemenang Olahragawan/ti</h4>
+                    <p class="text-muted">Sistem akan mengira pungutan pingat (Emas, Perak, Gangsa) dan rekod baharu secara automatik berdasarkan keputusan rasmi acara Akhir.</p>
+                    
+                    <button class="btn btn-primary mb-4" id="btn-kira-olahragawan">
+                        <i class="bi bi-calculator me-2"></i>Kira Pemenang Sekarang
+                    </button>
 
-    <div class="modal fade" id="modalBackup" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header bg-primary text-white">
-                    <h5 class="modal-title"><i class="bi bi-cloud-download me-2"></i>Backup Data (Eksport)</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <p class="text-muted">Fungsi ini akan memuat turun semua data (peserta, acara, keputusan) ke dalam bentuk fail <strong>.json</strong> untuk simpanan anda.</p>
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">Pilih Tahun untuk Backup:</label>
-                        <select id="select-backup-tahun" class="form-select">
-                            <option value="">-- Muat turun Semua Tahun --</option>
-                            <option value="2024">2024</option>
-                            <option value="2025">2025</option>
-                            <option value="2026">2026</option>
-                        </select>
+                    <div id="result-olahragawan">
+                        <div class="alert alert-info">Sila tekan butang 'Kira Pemenang' untuk memproses data terkini.</div>
                     </div>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-light border" data-bs-dismiss="modal">Batal</button>
-                    <button type="button" class="btn btn-primary" id="btn-laksana-backup"><i class="bi bi-download me-1"></i> Muat Turun Backup</button>
-                </div>
             </div>
-        </div>
-    </div>
 
-    <div class="modal fade" id="modalRestore" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header bg-success text-white">
-                    <h5 class="modal-title"><i class="bi bi-cloud-upload me-2"></i>Restore Data (Import)</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="alert alert-warning py-2 small">
-                        <i class="bi bi-exclamation-triangle-fill me-1"></i> <strong>Amaran:</strong> Memuat naik fail backup (.json) akan menulis ganti (overwrite) data sedia ada di dalam pangkalan data.
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">Pilih Fail Backup (.json):</label>
-                        <input type="file" id="file-restore" class="form-control" accept=".json">
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-light border" data-bs-dismiss="modal">Batal</button>
-                    <button type="button" class="btn btn-success" id="btn-laksana-restore"><i class="bi bi-upload me-1"></i> Muat Naik Data</button>
-                </div>
-            </div>
         </div>
     </div>
 
     <div class="modal fade" id="modalPadam" tabindex="-1">
         <div class="modal-dialog">
-            <div class="modal-content border-danger">
+            <div class="modal-content">
                 <div class="modal-header bg-danger text-white">
-                    <h5 class="modal-title"><i class="bi bi-trash-fill me-2"></i>Padam Data</h5>
+                    <h5 class="modal-title">Amaran: Padam Data</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <p class="text-danger fw-bold">TINDAKAN INI TIDAK BOLEH DIKEMBALIKAN!</p>
-                    <p class="text-muted small">Sila pastikan anda telah membuat <strong>Backup Data</strong> terlebih dahulu sebelum melakukan pemadaman.</p>
+                    <div class="alert alert-danger">
+                        <strong>Tindakan ini tidak boleh diundur!</strong><br>
+                        Data yang dipadam akan hilang selamanya. Sila pastikan anda telah membuat Backup sebelum meneruskan.
+                    </div>
                     
                     <div class="mb-3">
-                        <label class="form-label fw-bold">Pilih Data Untuk Dipadam:</label>
-                        <select id="select-padam-jenis" class="form-select mb-2">
-                            <option value="peserta">Padam Semua Peserta Sahaja</option>
-                            <option value="keputusan">Padam Semua Keputusan Sahaja</option>
-                            <option value="semua">Padam KESELURUHAN Data Kejohanan</option>
+                        <label class="form-label">Pilih Jenis Data:</label>
+                        <select class="form-select" id="select-padam-jenis">
+                            <option value="peserta">Data Peserta Sahaja</option>
+                            <option value="semua">SEMUA DATA (Reset Kilang)</option>
                         </select>
                     </div>
 
-                    <div class="mb-2">
-                        <label class="form-label small">Sila taip <strong>SAH PADAM</strong> untuk mengesahkan:</label>
+                    <div class="mb-3">
+                        <label class="form-label">Taip <strong>SAH PADAM</strong> untuk mengesahkan:</label>
                         <input type="text" id="input-pengesahan-padam" class="form-control border-danger" placeholder="Taip di sini...">
                     </div>
                 </div>
@@ -266,11 +234,21 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
     <script type="module" src="js/main-admin.js"></script>
 
     <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            // Logik keselamatan untuk Modal Padam Data
+        // Toggle Sidebar Script
+        window.addEventListener('DOMContentLoaded', event => {
+            const sidebarToggle = document.body.querySelector('#sidebarToggle');
+            if (sidebarToggle) {
+                sidebarToggle.addEventListener('click', event => {
+                    event.preventDefault();
+                    document.body.classList.toggle('sb-sidenav-toggled');
+                });
+            }
+
+            // UI Logic for Padam Modal (Safety Check)
             const inputPengesahan = document.getElementById('input-pengesahan-padam');
             const btnPadam = document.getElementById('btn-laksana-padam');
 
