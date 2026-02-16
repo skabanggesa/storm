@@ -162,14 +162,14 @@ function setActiveMenu(activeId) {
  * Memaparkan papan pemuka (dashboard) utama.
  * Mengandungi statistik ringkas dan menu utiliti sistem.
  */
-// ==============================================================================
 
+// ==============================================================================
 // BAHAGIAN F: UI DASHBOARD UTAMA & SETUP (VERSI PENUH)
 // ==============================================================================
 
 async function renderSetupDashboard() {
     const contentArea = document.getElementById('content-area'); // Pastikan ID ini betul ikut HTML anda (content-area atau main-content)
-
+    
     // Paparan Loading Sementara
     contentArea.innerHTML = `<div class="text-center py-5"><div class="spinner-border text-primary" role="status"></div><p class="mt-2">Memuatkan Dashboard...</p></div>`;
 
@@ -179,8 +179,8 @@ async function renderSetupDashboard() {
         totalPeserta: 0,
         totalRumah: 4
     };
-    try {
 
+    try {
         // Kira Acara
         const acaraSnap = await getDocs(collection(db, "kejohanan", tahunAktif, "acara"));
         stats.totalAcara = acaraSnap.size;
@@ -196,6 +196,7 @@ async function renderSetupDashboard() {
     // 2. Jana HTML Dashboard
     const html = `
         <div class="container-fluid animate__animated animate__fadeIn">
+            
             <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
                 <h1 class="h2">Dashboard & Tetapan (${tahunAktif})</h1>
                 <div class="btn-toolbar mb-2 mb-md-0">
@@ -211,7 +212,6 @@ async function renderSetupDashboard() {
                         <div class="card-body d-flex align-items-center">
                             <div class="display-4 me-3"><i class="bi bi-people-fill"></i></div>
                             <div>
-
                                 <h5 class="card-title mb-0">Jumlah Atlet</h5>
                                 <h2 class="fw-bold mb-0">${stats.totalPeserta}</h2>
                             </div>
@@ -229,13 +229,11 @@ async function renderSetupDashboard() {
                         </div>
                     </div>
                 </div>
-
                 <div class="col-md-4">
                     <div class="card shadow-sm border-0 bg-info text-white h-100">
                         <div class="card-body d-flex align-items-center">
                             <div class="display-4 me-3"><i class="bi bi-house-door-fill"></i></div>
                             <div>
-
                                 <h5 class="card-title mb-0">Rumah Sukan</h5>
                                 <h2 class="fw-bold mb-0">${stats.totalRumah}</h2>
                             </div>
@@ -390,7 +388,7 @@ async function renderSetupDashboard() {
     `;
 
     contentArea.innerHTML = html;
-
+    
     // --- BIND EVENT LISTENERS UNTUK DASHBOARD ---
 
     // 1. Tombol Inisialisasi
@@ -1776,6 +1774,7 @@ function updateWinnerCard(idTitle, idStats, data) {
     }
 }
 // End of File
+
 
 
 
