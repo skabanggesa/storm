@@ -3,33 +3,203 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Live Score | Kejohanan Olahraga</title>
+    <title>Portal Utama | Kejohanan Olahraga</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <style>
+        body {
+            background-color: #f0f2f5;
+        }
+        .house-card {
+            transition: transform 0.2s;
+        }
+        .house-card:hover {
+            transform: translateY(-5px);
+        }
+        .bg-gradient-primary {
+            background: linear-gradient(45deg, #4e73df, #224abe);
+        }
+    </style>
 </head>
-<meta http-equiv="refresh" content="0; url=login.html">
-<body class="bg-light">
-    <nav class="navbar navbar-dark bg-primary mb-4">
-        <div class="container text-center">
-            <span class="navbar-brand mb-0 h1 w-100">KEJOHANAN OLAHRAGA TAHUNAN</span>
+<body>
+
+    <nav class="navbar navbar-dark bg-gradient-primary shadow mb-4">
+        <div class="container justify-content-center">
+            <span class="navbar-brand mb-0 h1 fw-bold"><i class="bi bi-trophy-fill me-2"></i>SISTEM KEJOHANAN OLAHRAGA (OFFLINE)</span>
         </div>
     </nav>
 
     <div class="container">
-        <h2 class="text-center mb-4">Papan Markah Terkini</h2>
-        <div class="row justify-content-center">
-            <div class="col-md-8">
-                <div class="card shadow">
-                    <div class="card-body" id="leaderboard-container">
-                        <p class="text-center">Memuatkan markah...</p>
+        
+        <div class="row justify-content-center mb-5">
+            <div class="col-md-10">
+                <div class="card shadow border-0">
+                    <div class="card-header bg-white py-3">
+                        <h5 class="m-0 font-weight-bold text-primary text-center">
+                            <i class="bi bi-bar-chart-fill me-2"></i>KEDUDUKAN RUMAH SUKAN TERKINI
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="leaderboard-container">
+                            <div class="text-center py-4">
+                                <div class="spinner-border text-primary" role="status"></div>
+                                <p class="mt-2 text-muted">Sedang mengira markah dari LocalStorage...</p>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
+
+        <div class="row justify-content-center g-4">
+            <div class="col-md-4">
+                <div class="card h-100 shadow-sm border-0 house-card text-center p-4">
+                    <div class="card-body">
+                        <i class="bi bi-person-lock text-primary display-4 mb-3"></i>
+                        <h4 class="fw-bold">Admin / Urusetia</h4>
+                        <p class="text-muted small">Urus acara, masukkan keputusan dan cetak laporan.</p>
+                        <a href="login.html" class="btn btn-primary w-100 rounded-pill fw-bold">Masuk Admin</a>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-4">
+                <div class="card h-100 shadow-sm border-0 house-card text-center p-4">
+                    <div class="card-body">
+                        <i class="bi bi-person-badge text-success display-4 mb-3"></i>
+                        <h4 class="fw-bold">Guru Rumah Sukan</h4>
+                        <p class="text-muted small">Daftar peserta rumah sukan dan semak senarai atlet.</p>
+                        <a href="login.html?role=guru" class="btn btn-success w-100 rounded-pill fw-bold">Masuk Guru</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="card h-100 shadow-sm border-0 house-card text-center p-4">
+                    <div class="card-body">
+                        <i class="bi bi-list-ol text-warning display-4 mb-3"></i>
+                        <h4 class="fw-bold">Keputusan Penuh</h4>
+                        <p class="text-muted small">Lihat senarai penuh pemenang bagi setiap acara.</p>
+                        <a href="keputusan.html" class="btn btn-warning text-dark w-100 rounded-pill fw-bold">Lihat Keputusan</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="text-center mt-5 text-muted small">
+            &copy; 2025 Sistem KOT (Versi LocalStorage)
+        </div>
     </div>
 
-    <script type="module">
-        import { getLeaderboard } from './js/modules/scoring.js';
-        // Logik untuk paparkan markah setiap 30 saat
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            renderLeaderboard();
+        });
+
+        function renderLeaderboard() {
+            const container = document.getElementById('leaderboard-container');
+            
+            // 1. Tarik data dari LocalStorage
+            // Data utama biasanya disimpan dalam key 'kejohanan_data' atau berasingan
+            // Untuk LocalStorage, kita kena scan semua key jika struktur tak standard, 
+            // ATAU gunakan satu key besar. 
+            // ANGGAPAN: Kita akan guna structure: localStorage.getItem('kejohanan_data') yang mengandungi { acara: [], peserta: [] }
+            // Nanti di fail JS utama saya akan pastikan format ini.
+            
+            const dbDataString = localStorage.getItem('kejohanan_data');
+            
+            if (!dbDataString) {
+                container.innerHTML = `<div class="alert alert-warning text-center">Tiada data kejohanan dijumpai. Sila login Admin untuk setup tahun baru.</div>`;
+                return;
+            }
+
+            try {
+                const dbData = JSON.parse(dbDataString);
+                const listAcara = dbData.acara || [];
+                
+                // Objek Rumah Sukan
+                let pungutan = {
+                    'MERAH': { emas: 0, perak: 0, gangsa: 0, mata: 0, color: 'danger' },
+                    'BIRU': { emas: 0, perak: 0, gangsa: 0, mata: 0, color: 'primary' },
+                    'KUNING': { emas: 0, perak: 0, gangsa: 0, mata: 0, color: 'warning' },
+                    'HIJAU': { emas: 0, perak: 0, gangsa: 0, mata: 0, color: 'success' }
+                };
+
+                // Config Mata
+                const MATA = { emas: 5, perak: 3, gangsa: 1 }; // Boleh ubah ikut setting
+
+                // 2. Kira Mata
+                listAcara.forEach(acara => {
+                    if (acara.pemenang && Array.isArray(acara.pemenang)) {
+                        acara.pemenang.forEach((atlet, index) => {
+                            if (!atlet.rumah) return;
+                            
+                            // Normalise nama rumah (buang whitespace, uppercase)
+                            let rumah = atlet.rumah.trim().toUpperCase();
+                            
+                            // Handle nama rumah lain jika ada (pilihan)
+                            if (!pungutan[rumah]) return; // Skip jika rumah tak dikenali
+
+                            if (index === 0) { // Emas
+                                pungutan[rumah].emas++;
+                                pungutan[rumah].mata += MATA.emas;
+                            } else if (index === 1) { // Perak
+                                pungutan[rumah].perak++;
+                                pungutan[rumah].mata += MATA.perak;
+                            } else if (index === 2) { // Gangsa
+                                pungutan[rumah].gangsa++;
+                                pungutan[rumah].mata += MATA.gangsa;
+                            }
+                        });
+                    }
+                });
+
+                // 3. Susun Kedudukan (Sorting)
+                let kedudukan = Object.entries(pungutan).sort((a, b) => b[1].mata - a[1].mata);
+
+                // 4. Jana HTML Table
+                let html = `
+                    <div class="table-responsive">
+                        <table class="table table-bordered text-center align-middle">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>Kedudukan</th>
+                                    <th class="text-start">Rumah Sukan</th>
+                                    <th class="bg-warning text-dark">Emas</th>
+                                    <th class="bg-secondary text-white">Perak</th>
+                                    <th class="bg-danger text-white">Gangsa</th>
+                                    <th>Mata</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+
+                kedudukan.forEach((item, index) => {
+                    const [namaRumah, data] = item;
+                    const rowClass = index === 0 ? 'table-warning fw-bold' : ''; // Highlight juara
+                    
+                    html += `
+                        <tr class="${rowClass}">
+                            <td class="h4">${index + 1}</td>
+                            <td class="text-start">
+                                <span class="badge bg-${data.color} me-2 p-2">&nbsp;</span> ${namaRumah}
+                            </td>
+                            <td class="fw-bold">${data.emas}</td>
+                            <td>${data.perak}</td>
+                            <td>${data.gangsa}</td>
+                            <td class="h4 fw-bold text-primary">${data.mata}</td>
+                        </tr>
+                    `;
+                });
+
+                html += `</tbody></table></div>`;
+                container.innerHTML = html;
+
+            } catch (err) {
+                console.error(err);
+                container.innerHTML = `<div class="alert alert-danger">Ralat memproses data: ${err.message}</div>`;
+            }
+        }
     </script>
 </body>
 </html>
